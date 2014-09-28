@@ -1,24 +1,26 @@
 (ns lein-ui.core
     (:require [clojure.java.io :as io]
+              [clojure.pprint :as pprint]
               [leiningen.core.project :as project]
+              [leiningen.repl :as repl]
               [org.httpkit.server :as server]
               [ring.middleware.reload :as reload]
               [compojure.handler :refer [site]]
               [compojure.core :refer [defroutes GET POST DELETE]]
-              [compojure.route :as route]))
+              [compojure.route :as route])
+      (:import (com.hypirion.io Pipe ClosingPipe)))
 
 ;;; Projects
 
 (defonce projects (atom {}))
 
-(defrecord Project [project state])
 (defn new-project [project-map]
-  (->Project project-map (atom {})))
+  (assoc project-map ::run-state (atom {})))
 
 (defn load-project! [root]
   (let [project (->>  (io/file root "project.clj")
                       (.getAbsolutePath)
-                      (project/read-raw))]    
+                      (project/read))]    
        (swap! projects (fn [ps p]
                          (when (ps (:name p))
                            (throw (ex-info (str "Project already loaded")
@@ -33,9 +35,69 @@
   (swap! projects dissoc name))
 
 (defn reload-project! [name]
-  (let [root (-> @projects name :root)]
+  (let [root (-> @projects (get name) :root)]
     (unload-project! name)
     (load-project! root)))
+
+(defn get-project* [name]
+  (if-let [project (@projects name)]
+    project
+    (throw (ex-info "Project doesn't exist" {:name name}))))
+
+;; adapated from leiningen.core.eval
+(defn- overridden-env
+  "Returns an overridden version of the current environment as an Array of
+  Strings of the form name=val, suitable for passing to Runtime#exec."
+  [env]
+  (->> env
+       (filter val)
+       (map #(str (name (key %)) "=" (val %)))
+       (into-array String)))
+
+;; adapated from leiningen.core.eval
+(defn sh
+  "A version of clojure.java.shell/sh that streams in/out/err."
+  [cmd & {:keys [dir]}]
+  (let [env (overridden-env (System/getenv))
+        proc (.exec (Runtime/getRuntime) (into-array cmd) env
+                    (io/file dir))]
+    (.addShutdownHook (Runtime/getRuntime)
+                      (Thread. (fn [] (.destroy proc))))
+    ;; TODO: wrap setup in try/finally and close streams
+    (let [out (io/reader (.getInputStream proc))
+          err (io/reader (.getErrorStream proc))
+          out-writer (java.io.StringWriter.)
+          err-writer (java.io.StringWriter.)
+          pump-out (doto (Pipe. out out-writer) .start)
+          pump-err (doto (Pipe. err err-writer) .start)]
+      {:process proc
+       :pump-out pump-out
+       :pump-err pump-err
+       :out-writer out-writer
+       :err-writer err-writer})))
+
+;;; Objective
+;; Launch a process & observe its output in a webui.
+
+;; Technique
+;;  - .exec, redirect out & err to StringWriters
+;;  - shove Process to another thread and waitFor it to end
+;;  - associate process, outSW, and errSW to project's ::run-state
+
+
+
+
+
+(defn start-repl! [name]
+  (let [project (get-project* name)]
+    (when (-> project ::run-state deref :repl)
+      (throw (ex-info "Project already running a repl!" {:name name})))
+
+    (let [env (overridden-env (System/getenv))
+          repl-process (sh ["lein"
+                            "repl"
+                            ":headless"] :dir ".")]
+      (swap! (::run-state project) assoc :repl repl-process))))
 
 
 ;;; Util
@@ -47,7 +109,7 @@
 
 (defn pprint-str [o]
   (let [w (java.io.StringWriter.)]
-    (pprint o w)
+    (pprint/pprint o w)
     (.toString w)))
 
 
@@ -66,9 +128,8 @@
                (project-short project))})
 
 (defn get-project [project-name]
-  (-> @projects
-      (get project-name)
-      :project))
+  (-> (get @projects project-name)
+      (dissoc ::run-state)))
 
 (defn add-project [project-root]
   (load-project! project-root))
@@ -88,7 +149,7 @@
   (POST "/api/projects" [root]
         (let [name (load-project! root)]
           {:status 201
-           :body (pprint-str (project-short (:project (@projects name))))}))
+           :body (pprint-str (project-short (get-project name)))}))
   (DELETE "/api/projects/:project-name" [project-name]
           (unload-project! project-name)
           {:status 204})
@@ -109,6 +170,3 @@
 (defn reset-server []
   (stop-server)
   (start-server))
-
-
-
