@@ -1,6 +1,7 @@
 (ns lein-ui.core
     (:require [clojure.java.io :as io]
               [clojure.pprint :as pprint]
+              [clojure.tools.nrepl :as nrepl]
               [leiningen.core.project :as project]
               [leiningen.repl :as repl]
               [org.httpkit.server :as server]
@@ -56,7 +57,6 @@
 
 ;; adapated from leiningen.core.eval
 (defn sh
-  "A version of clojure.java.shell/sh that streams in/out/err."
   [cmd & {:keys [dir]}]
   (let [env (overridden-env (System/getenv))
         proc (.exec (Runtime/getRuntime) (into-array cmd) env
@@ -83,10 +83,21 @@
 ;;  - .exec, redirect out & err to StringWriters
 ;;  - shove Process to another thread and waitFor it to end
 ;;  - associate process, outSW, and errSW to project's ::run-state
+;;  - Om app to ctrl & refresh output
 
 
 
+;;; Objectve
+;; Interact with a project through the browser
 
+;; Technique
+;;  - start an nrepl instance with a port
+;;  - connect an nrepl client to that instance
+;;  - use the client 
+
+(defonce free-port (atom 4000))
+(defn next-free-port []
+  (swap! free-port inc))
 
 (defn start-repl! [name]
   (let [project (get-project* name)]
@@ -94,10 +105,38 @@
       (throw (ex-info "Project already running a repl!" {:name name})))
 
     (let [env (overridden-env (System/getenv))
+          host (repl/repl-host project)
+          port (let [project-port (repl/repl-port project)]
+                 (if (= project-port 0)
+                   (next-free-port)
+                   project-port))
           repl-process (sh ["lein"
                             "repl"
-                            ":headless"] :dir ".")]
-      (swap! (::run-state project) assoc :repl repl-process))))
+                            ":headless"
+                            ":host"
+                            host
+                            ":port"
+                            (str port)]
+                           :dir ".")]
+      (swap! (::run-state project) assoc :repl
+             (assoc repl-process
+               ::host host
+               ::port port))
+      nil)))
+
+
+(defn stop-repl! [name]
+  (throw (ex-info "Not supported" {:error :go-away}))
+  (let [project (get-project* name)]
+    (if-let [repl (-> project ::run-state deref :repl)]
+      (do (.destroy (:process repl))
+          (swap! (::run-state project) dissoc :repl)
+          nil)
+      (throw (ex-info "repl not running" {:name name})))))
+
+
+;; (defn )
+
 
 
 ;;; Util
@@ -144,8 +183,17 @@
        {:body (pprint-str (get-projects))
         :status 200})
   (GET "/api/projects/:project-name" [project-name]
-       {:body (pprint-str (get-project project-name))
-        :status 200})
+       (let [project (get-project* project-name)
+             run-state @(project ::run-state)]
+         {:body (pprint-str
+                 {:computed-map-url (str (url-for-project project-name)
+                                         "/computed-map")
+                  :repl {:state (if (run-state :repl)
+                                  :started
+                                  :stopped)
+                         :url (str (url-for-project project-name)
+                                   "/repl")}})
+          :status 200}))
   (POST "/api/projects" [root]
         (let [name (load-project! root)]
           {:status 201
@@ -153,6 +201,7 @@
   (DELETE "/api/projects/:project-name" [project-name]
           (unload-project! project-name)
           {:status 204})
+  (route/resources "/")
   (route/not-found "<p>Page not found.</p>"))
 
 (defonce server (atom nil))

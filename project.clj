@@ -12,19 +12,24 @@
                  [org.clojure/core.match "0.2.1"]
                  [cheshire "5.3.1"]                 
                  [om "0.7.3"]
+                 [bond "0.2.5"]
                  [ring/ring-devel "1.1.8"]
                  [ring/ring-core "1.1.8"]
-                 [compojure "1.1.9"]]
+                 [compojure "1.1.9"]
+                 [org.webjars/react "0.11.1"]
+                 [om "0.7.1"]
+                 [cljs-http "0.1.14"]
+                 [figwheel "0.1.4-SNAPSHOT"]]
 
-  :cljsbuild {
-  :builds [{:id "dev"
-            :source-paths ["src-cljs"]
-            :compiler {
-              :output-to "main.js"
-              :output-dir "out"
-              :optimizations :none
-              :source-map true}}]}
+  :cljsbuild {:builds
+              [{:id "dev"
+                :source-paths ["src-cljs/"]
+                :compiler {:output-to "resources/public/js/main.js"
+                           :output-dir "resources/public/js/out"
+                           :optimizations :none
+                           :source-map true}}]}
 
-  :plugins [[lein-cljsbuild "1.0.3"]]
+  :plugins [[lein-cljsbuild "1.0.3"]
+            [lein-figwheel "0.1.4-SNAPSHOT"]]
 
   :repl-options {:nrepl-middleware [cemerick.piggieback/wrap-cljs-repl]})
