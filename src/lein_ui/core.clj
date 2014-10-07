@@ -15,35 +15,41 @@
 
 (defonce projects (atom {}))
 
-(defn new-project [project-map]
-  (assoc project-map ::run-state (atom {})))
+(defn new-project [project-map raw-project-map]
+  (assoc project-map
+    ::run-state (atom {})
+    ::raw raw-project-map))
+
+(defn get-project* [name]
+  (if-let [project (@projects name)]
+    project
+    (throw (ex-info "Project doesn't exist" {:name name}))))
 
 (defn load-project! [root]
-  (let [project (->>  (io/file root "project.clj")
-                      (.getAbsolutePath)
-                      (project/read))]    
-       (swap! projects (fn [ps p]
-                         (when (ps (:name p))
+  (let [path (->>  (io/file root "project.clj")
+                      (.getAbsolutePath))
+        project (project/read path)
+        raw-project (project/read-raw path)
+        ui-project (new-project project raw-project)
+        name (-> ui-project :name)
+        root (-> ui-project :root)]
+       (swap! projects (fn [ps]
+                         (when (ps name)
                            (throw (ex-info (str "Project already loaded")
-                                           {:root (:root p)})))
-                         (assoc ps (:name p)
-                                (new-project p)))
-              project)
-       (:name project)))
+                                           {:root root})))
+                         (assoc ps name
+                                ui-project)))
+       name))
 
 
 (defn unload-project! [name]
   (swap! projects dissoc name))
 
 (defn reload-project! [name]
-  (let [root (-> @projects (get name) :root)]
+  (let [root (-> (get-project* name) :root)]
     (unload-project! name)
     (load-project! root)))
 
-(defn get-project* [name]
-  (if-let [project (@projects name)]
-    project
-    (throw (ex-info "Project doesn't exist" {:name name}))))
 
 ;; adapated from leiningen.core.eval
 (defn- overridden-env
@@ -145,13 +151,17 @@
     :jar-exclusions
     :checkout-deps-shares
 
-    ;; include our data state in here
+    ;; also remove our data
     ;; TODO move our state out of the project map?
     ::run-state
-    })
+    ::raw})
 
-(defn get-project [project-name]
-  (apply dissoc (get @projects project-name)
+(defn get-readable-project [project-name]
+  (apply dissoc (get-project* project-name)
+         non-data-keys))
+
+(defn get-readable-raw-project [project-name]
+  (apply dissoc (::raw (get-project* project-name))
          non-data-keys))
 
 (defn project-summary [project]
@@ -180,17 +190,24 @@
        (let [project (get-project* project-name)
              run-state @(project ::run-state)]
          {:body (pprint-str
-                 {:computed-map-url (str (url-for-project project-name)
-                                         "/computed-map")
-                  :repl {:state (if (run-state :repl)
-                                  :started
-                                  :stopped)
-                         :url (str (url-for-project project-name)
-                                   "/repl")}})
+                 (merge (project-summary project)
+                        ;; TODO just include these in the summary?
+                        {:map-url (str (url-for-project project-name)
+                                                "/map")
+                         :raw-map-url (str (url-for-project project-name)
+                                           "/raw-map")
+                         :repl {:state (if (run-state :repl)
+                                         :started
+                                         :stopped)
+                                :url (str (url-for-project project-name)
+                                          "/repl")}}))
           :status 200}))
-  (GET "/api/projects/:project-name/computed-map" [project-name]
-       {:body (pprint-str
-               )})
+  (GET "/api/projects/:project-name/map" [project-name]
+       {:body (pprint-str (get-readable-project project-name))
+        :status 200})
+  (GET "/api/projects/:project-name/raw-map" [project-name]
+       {:body (pprint-str (get-readable-raw-project project-name))
+        :status 200})
   (POST "/api/projects" [root]
         (let [name (load-project! root)]
           {:status 201
@@ -206,7 +223,7 @@
 (defn start-server [& args] ;; entry point, lein run will pick up and start from here
   (when @server
     (throw (ex-info "Server running!" {})))
-  (let [handler (reload/wrap-reload (site #'all-routes))]    
+  (let [handler (reload/wrap-reload (site #'all-routes))]
     (reset! server (server/run-server handler {:port 8000}))))
 
 (defn stop-server []
