@@ -76,25 +76,6 @@
        :out-writer out-writer
        :err-writer err-writer})))
 
-;;; Objective
-;; Launch a process & observe its output in a webui.
-
-;; Technique
-;;  - .exec, redirect out & err to StringWriters
-;;  - shove Process to another thread and waitFor it to end
-;;  - associate process, outSW, and errSW to project's ::run-state
-;;  - Om app to ctrl & refresh output
-
-
-
-;;; Objectve
-;; Interact with a project through the browser
-
-;; Technique
-;;  - start an nrepl instance with a port
-;;  - connect an nrepl client to that instance
-;;  - use the client 
-
 (defonce free-port (atom 4000))
 (defn next-free-port []
   (swap! free-port inc))
@@ -135,13 +116,11 @@
       (throw (ex-info "repl not running" {:name name})))))
 
 
-;; (defn )
-
 
 
 ;;; Util
 (defn base-url []
-  (str "http://" "localhost" ":8001/"))
+  (str "http://" "localhost" ":8000/"))
 
 (defn url-for [path]
   (str (base-url) path))
@@ -156,19 +135,34 @@
 (defn url-for-project [name]
   (url-for (str "api/projects/" name)))
 
-(defn project-short [project]
+
+;; TODO think about this
+(def non-data-keys
+  "These are keys of a leiningen project map which contain non-values
+  or values not serializable or readable by the base EDN spec"
+  #{:uberjar-merge-with
+    :uberjar-exclusions
+    :jar-exclusions
+    :checkout-deps-shares
+
+    ;; include our data state in here
+    ;; TODO move our state out of the project map?
+    ::run-state
+    })
+
+(defn get-project [project-name]
+  (apply dissoc (get @projects project-name)
+         non-data-keys))
+
+(defn project-summary [project]
   {:url (url-for-project (:name project))
    :name (:name project)
    :version (:version project)
    :root (:root project)})
 
 (defn get-projects []
-  {:projects (for [[name {:keys [project]}] @projects]
-               (project-short project))})
-
-(defn get-project [project-name]
-  (-> (get @projects project-name)
-      (dissoc ::run-state)))
+  {:projects (for [[name project] @projects]
+               (project-summary project))})
 
 (defn add-project [project-root]
   (load-project! project-root))
@@ -194,6 +188,9 @@
                          :url (str (url-for-project project-name)
                                    "/repl")}})
           :status 200}))
+  (GET "/api/projects/:project-name/computed-map" [project-name]
+       {:body (pprint-str
+               )})
   (POST "/api/projects" [root]
         (let [name (load-project! root)]
           {:status 201
