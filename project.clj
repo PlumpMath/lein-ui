@@ -19,7 +19,8 @@
                  [org.webjars/react "0.11.1"]
                  [om "0.7.1"]
                  [cljs-http "0.1.14"]
-                 [figwheel "0.1.4-SNAPSHOT"]]
+                 [figwheel "0.1.4-SNAPSHOT"]
+                 [sablono "0.2.22"]]
 
   :cljsbuild {:builds
               [{:id "dev"
