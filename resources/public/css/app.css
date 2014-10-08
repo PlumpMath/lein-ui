@@ -1,0 +1,25 @@
+#app-container {
+    width: 90%;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.active-project-link {
+    background-color: #ddd;
+}
+
+.project-list {
+    width: 10%;
+    margin: 5px;
+    padding: 5px;        
+    display: inline-block;
+    float: left;
+}
+
+.active-project-view {
+    margin: 5px;
+    padding: 5px;    
+    background-color: #ddd;
+    display: inline-block;
+}
+
