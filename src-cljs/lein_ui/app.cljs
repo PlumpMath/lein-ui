@@ -13,11 +13,18 @@
 (defonce app-state (atom {:projects {:active nil
                                      :map {}}}))
 
+(defn edn-body [response]
+  (-> response :body str edn/read-string))
 
-(defn fetch-project [result-chan name key url]
+(defn api-call [method url]
+  (go (edn-body
+       (<! (http/request {:method method
+                          :url url})))))
+
+(defn get-edn-url [result-chan url]
   (go
-    (let [result (<! (http/get url))]
-      (put! result-chan [name key (-> result :body str edn/read-string)]))))
+    (let [result (<! (api-call :get url))]
+      (put! result-chan result))))
 
 (defn active-project [projects]
   (when-let [active-key (projects :active)]
@@ -41,16 +48,36 @@
                           (put! set-project project))}
            (project :name)])]))))
 
+
+(defn repl-widget [repl owner]
+  (reify
+    om/IRenderState
+    (render-state [_ {:keys [project-controller]}]
+      (let [{:keys [state url]} repl]
+        (condp = state
+          :stopped (html [:button {:onClick
+                                   (fn [_]
+                                     (put! project-controller :start-repl))}
+                          "start repl"]))))))
+
 (defn app-view [project owner]
   (reify
     om/IRender
     (render [_]
       (html [:div {:class "active-project-view"}
-             [:div (:name project)]
-             [:div (get-in project [:raw-map :description])]
-             [:ol
-              (for [[name version] (get-in project [:raw-map :dependencies])]
-                [:li (str name " " version)])]]))))
+             [:div
+              [:h1 (:name project)]
+              (get-in project [:raw-map :description])]
+             [:div
+              [:h3 "REPL"]
+              (when-let [repl (project :repl)]
+                (om/build repl-widget (:repl project)
+                          {:init-state {:project-controller (-> project :controller :in)}}))]
+             [:div
+              [:h3 "Dependencies"]
+              [:ol
+               (for [[name version] (get-in project [:raw-map :dependencies])]
+                 [:li {:key name} (str name " " version)])]]]))))
 
 (def set-project (chan))
 (defn app [data owner]
@@ -68,12 +95,18 @@
           "Print State"]]
 
         (om/build app-list (:projects data) {:init-state {:set-project set-project}})
-        (om/build app-view (active-project (:projects data)))]))))
+        (when-let [project (active-project (:projects data))]
+          (om/build app-view project))]))))
 
 (om/root
  app
  app-state
  {:target (. js/document (getElementById "my-app"))})
+
+(defmulti handle-project-message (fn [msg project] msg))
+
+(defmethod handle-project-message :start-repl [_ project]
+  (api-call :post (-> @project :repl :url)))
 
 (defn ensure-project-controller-process [project]
   (if-let [controller (@project :controller)]
@@ -81,13 +114,18 @@
     (let [in (chan)]
       {:in in
        :process (go
-                  (fetch-project in "" :summary (@project :url))
-                  (let [[_ _ summary] (<! in)]
+                  (get-edn-url in (@project :url))
+                  (let [summary (<! in)]
                     (om/transact! project #(merge % summary)))
 
-                  (fetch-project in "" :raw-map (@project :raw-map-url))
-                  (let [[_ _ raw-map] (<! in)]
-                    (om/transact! project #(assoc % :raw-map raw-map))))})))
+                  (get-edn-url in (@project :raw-map-url))
+                  (let [raw-map (<! in)]
+                    (om/transact! project #(assoc % :raw-map raw-map)))
+
+                  (loop []
+                    (let [msg (<! in)]
+                      (handle-project-message msg project))
+                    (recur)))})))
 
 (defn set-project-process []
   (go

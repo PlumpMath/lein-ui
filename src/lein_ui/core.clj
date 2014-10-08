@@ -200,14 +200,19 @@
                                          :started
                                          :stopped)
                                 :url (str (url-for-project project-name)
-                                          "/repl")}}))
+                                          "/repl/start")}}))
           :status 200}))
   (GET "/api/projects/:project-name/map" [project-name]
        {:body (pprint-str (get-readable-project project-name))
         :status 200})
   (GET "/api/projects/:project-name/raw-map" [project-name]
-       {:body (pprint-str (get-readable-raw-project project-name))
+       {:body (pprint-str (get-readable-raw-project project-name))        
         :status 200})
+  (POST "/api/projects/:project-name/repl/start" [project-name]
+        (let [repl (start-repl! project-name)]
+          {:body {:state :started
+                  :url (str (url-for-project project-name) "/repl")}
+           :status 201}))
   (POST "/api/projects" [root]
         (let [name (load-project! root)]
           {:status 201
