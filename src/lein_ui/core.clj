@@ -142,6 +142,21 @@
   (url-for (str "api/projects/" name)))
 
 
+(defn get-repl-data [name]
+  (let [process (-> name get-project* ::run-state deref :repl)
+        url (str (url-for-project name) "/repl")]
+    (merge
+     {:url url}
+     (if process
+       {:state :started
+        :host (::host process)
+        :port (::port process)
+        :stop-url (str (url-for-project name) "/repl/stop")}
+       {:state :stopped
+        :start-url (str (url-for-project name) "/repl/start")}))))
+
+
+
 ;; TODO think about this
 (def non-data-keys
   "These are keys of a leiningen project map which contain non-values
@@ -209,14 +224,13 @@
        {:body (pprint-str (get-readable-raw-project project-name))        
         :status 200})
   (POST "/api/projects/:project-name/repl/start" [project-name]
-        (let [repl (start-repl! project-name)]
-          {:body {:state :started
-                  :url (str (url-for-project project-name) "/repl")}
-           :status 201}))
+        (start-repl! project-name)
+        {:body (pprint-str (get-repl-data project-name))
+         :status 201})
   (POST "/api/projects" [root]
         (let [name (load-project! root)]
           {:status 201
-           :body (pprint-str (project-short (get-project name)))}))
+           :body (pprint-str (project-summary (get-project* name)))}))
   (DELETE "/api/projects/:project-name" [project-name]
           (unload-project! project-name)
           {:status 204})
