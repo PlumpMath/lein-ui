@@ -16,10 +16,12 @@
 (defn edn-body [response]
   (-> response :body str edn/read-string))
 
-(defn api-call [method url]
+(defn api-call [method url & body]
   (go (edn-body
-       (<! (http/request {:method method
-                          :url url})))))
+       (<! (http/request (merge
+                          {:method method
+                           :url url}
+                          (when body {:form-params body})))))))
 
 (defn get-edn-url [result-chan url]
   (go
@@ -51,14 +53,33 @@
 
 (defn repl-widget [repl owner]
   (reify
+    om/IDidMount
+    (did-mount [this] 
+      (om/set-state! owner :eval-input
+                     (-> (om/get-node owner)
+                         (.querySelector ".repl-code"))))
+
     om/IRenderState
-    (render-state [_ {:keys [project-controller]}]
+    (render-state [_ {:keys [project-controller eval-input]}]
       (let [{:keys [state url]} repl]
         (condp = state
-          :stopped (html [:button {:onClick
-                                   (fn [_]
-                                     (put! project-controller :start-repl))}
-                          "start repl"]))))))
+          :stopped (html [:div
+                          [:button {:onClick
+                                    (fn [_]
+                                      (put! project-controller {:msg :start-repl
+                                                                :args nil}))}
+                           "start repl"]])
+          :started (html [:div
+                          [:input {:type "text"
+                                   :class "repl-code"}]
+                          [:button {:onClick
+                                    (fn [_]
+                                      (put! project-controller
+                                            {:msg :eval
+                                             :args [(.-value eval-input)]})
+                                      (set! (.-value eval-input) ""))
+                                    }
+                           "Eval!"]]))))))
 
 (defn app-view [project owner]
   (reify
@@ -103,10 +124,34 @@
  app-state
  {:target (. js/document (getElementById "my-app"))})
 
-(defmulti handle-project-message (fn [msg project] msg))
+(defmulti handle-project-message (fn [{:keys [msg]} project] msg))
 
 (defmethod handle-project-message :start-repl [_ project]
-  (api-call :post (-> @project :repl :url)))
+  (go (let [repl (<! (api-call :post (-> @project :repl :url)))]
+        (om/transact! project (fn [p]
+                                (assoc p :repl repl))))))
+
+(defmethod handle-project-message :eval [{:keys [args]} project]
+  (let [code (first args)]
+    (om/transact! project
+                  (fn [p]
+                    (update-in p [:repl :history] (fnil conj [])
+                               {:code code
+                                :state :waiting})))
+    (go (let [result (<! (api-call :post (-> @project :repl :eval-url)
+                                   [:code code]))]
+          (println
+           (reduce (fn [s val]
+                     (cond
+                      (= (:status val) ["done"]) (assoc s :state :done)
+                      (:ex val) (assoc s :exception (:ex val))
+                      (:err val) (assoc s :error (:err val))                           
+                      (:value val) (assoc s :value (:value val))
+                      (:out val)   (update-in s [:out] str (:out val))))
+                   {:state :no-response}
+                   result))
+          
+          ))))
 
 (defn ensure-project-controller-process [project]
   (if-let [controller (@project :controller)]

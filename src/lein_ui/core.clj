@@ -50,7 +50,6 @@
     (unload-project! name)
     (load-project! root)))
 
-
 ;; adapated from leiningen.core.eval
 (defn- overridden-env
   "Returns an overridden version of the current environment as an Array of
@@ -107,10 +106,14 @@
                            :dir ".")]
       (swap! (::run-state project) assoc :repl
              (assoc repl-process
-               ::host host
-               ::port port))
+               :host host
+               :port port))
       nil)))
 
+
+(defn reset-repl! [name]
+  (reset! (-> name get-project* ::run-state)
+          nil))
 
 (defn stop-repl! [name]
   (throw (ex-info "Not supported" {:error :go-away}))
@@ -122,6 +125,13 @@
       (throw (ex-info "repl not running" {:name name})))))
 
 
+(defn repl-eval! [name code]
+  (let [{:keys [host port]} (-> name get-project* ::run-state deref :repl)]
+    (with-open [conn (nrepl/connect :host host
+                                    :port port)]
+      (-> (nrepl/client conn 1000)
+          (nrepl/message {:op "eval" :code code})
+          doall))))
 
 
 ;;; Util
@@ -151,7 +161,8 @@
        {:state :started
         :host (::host process)
         :port (::port process)
-        :stop-url (str (url-for-project name) "/repl/stop")}
+        :stop-url (str (url-for-project name) "/repl/stop")
+        :eval-url (str (url-for-project name) "/repl/eval")}
        {:state :stopped
         :start-url (str (url-for-project name) "/repl/start")}))))
 
@@ -211,11 +222,7 @@
                                                 "/map")
                          :raw-map-url (str (url-for-project project-name)
                                            "/raw-map")
-                         :repl {:state (if (run-state :repl)
-                                         :started
-                                         :stopped)
-                                :url (str (url-for-project project-name)
-                                          "/repl/start")}}))
+                         :repl (get-repl-data project-name)}))
           :status 200}))
   (GET "/api/projects/:project-name/map" [project-name]
        {:body (pprint-str (get-readable-project project-name))
@@ -227,6 +234,10 @@
         (start-repl! project-name)
         {:body (pprint-str (get-repl-data project-name))
          :status 201})
+  (POST "/api/projects/:project-name/repl/eval" {{:keys [project-name
+                                                         code]} :params}
+        {:body (pprint-str (repl-eval! project-name code))
+         :status 200})
   (POST "/api/projects" [root]
         (let [name (load-project! root)]
           {:status 201
