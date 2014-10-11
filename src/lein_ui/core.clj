@@ -143,7 +143,11 @@
 
 
 (defn figwheel-process [project]
-  {:thread (Thread. (fn [] (figwheel/figwheel project)))})
+  (println "starting figwheel thread")
+  {:thread (.start
+            (Thread. (bound-fn []
+                       (println "starting figwheel")
+                       (figwheel/figwheel project))))})
 
 (defn start-figwheel! [name]
   (let [project (get-project* "lein-ui")]
