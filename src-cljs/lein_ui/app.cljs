@@ -54,7 +54,7 @@
 (defn repl-widget [repl owner]
   (reify
     om/IDidMount
-    (did-mount [this] 
+    (did-mount [this]
       (om/set-state! owner :eval-input
                      (-> (om/get-node owner)
                          (.querySelector ".repl-code"))))
@@ -77,9 +77,12 @@
                                       (put! project-controller
                                             {:msg :eval
                                              :args [(.-value eval-input)]})
-                                      (set! (.-value eval-input) ""))
-                                    }
-                           "Eval!"]]))))))
+                                      (set! (.-value eval-input) ""))}
+                           "Eval!"]
+                          [:ul
+                           (for [[index item] (vec (-> repl :history :entries))]
+                             [:li {:key index} (:code item)])
+                           ]]))))))
 
 (defn app-view [project owner]
   (reify
@@ -129,29 +132,32 @@
 (defmethod handle-project-message :start-repl [_ project]
   (go (let [repl (<! (api-call :post (-> @project :repl :url)))]
         (om/transact! project (fn [p]
-                                (assoc p :repl repl))))))
+                                (update-in p [:repl] merge repl))))))
 
 (defmethod handle-project-message :eval [{:keys [args]} project]
   (let [code (first args)]
     (om/transact! project
                   (fn [p]
-                    (update-in p [:repl :history] (fnil conj [])
-                               {:code code
-                                :state :waiting})))
-    (go (let [result (<! (api-call :post (-> @project :repl :eval-url)
-                                   [:code code]))]
-          (println
-           (reduce (fn [s val]
-                     (cond
-                      (= (:status val) ["done"]) (assoc s :state :done)
-                      (:ex val) (assoc s :exception (:ex val))
-                      (:err val) (assoc s :error (:err val))                           
-                      (:value val) (assoc s :value (:value val))
-                      (:out val)   (update-in s [:out] str (:out val))))
-                   {:state :no-response}
-                   result))
-          
-          ))))
+                    (update-in p [:repl :history]
+                               (fn [{:keys [index entries] :as history}]
+                                 {:entries (assoc entries index {:state :waiting
+                                                                 :code code})
+                                  :index (inc index)}))))
+    (let [index (-> @project :repl :history :index dec)]
+      (go (let [result (<! (api-call :post (-> @project :repl :eval-url)
+                                     [:code code]))
+                final-state (reduce (fn [s val]
+                                      (cond
+                                       (= (:status val) ["done"]) (assoc s :state :done)
+                                       (:ex val) (assoc s :exception (:ex val))
+                                       (:err val) (assoc s :error (:err val))
+                                       (:value val) (assoc s :value (:value val))
+                                       (:out val)   (update-in s [:out] str (:out val))))
+                                    {:state :no-response}
+                                    result)]
+            (om/transact! project
+                          (fn [p]
+                            (update-in p [:repl :history :entries index] merge final-state))))))))
 
 (defn ensure-project-controller-process [project]
   (if-let [controller (@project :controller)]
@@ -161,7 +167,10 @@
        :process (go
                   (get-edn-url in (@project :url))
                   (let [summary (<! in)]
-                    (om/transact! project #(merge % summary)))
+                    (om/transact! project (fn [p]
+                                            (-> p
+                                                (merge summary)
+                                                (assoc-in [:repl :history] {:index 0 :entries (sorted-map-by >)})))))
 
                   (get-edn-url in (@project :raw-map-url))
                   (let [raw-map (<! in)]
@@ -179,7 +188,7 @@
         (swap! app-state (fn [state]
                            (-> state
                                (assoc-in [:projects :active] (@project :name))
-                               (assoc-in [:projects :map (:name @project) :controller] (ensure-project-controller-process project))))))      
+                               (assoc-in [:projects :map (:name @project) :controller] (ensure-project-controller-process project))))))
       (recur))))
 
 
