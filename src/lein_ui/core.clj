@@ -2,7 +2,9 @@
     (:require [clojure.java.io :as io]
               [clojure.pprint :as pprint]
               [clojure.tools.nrepl :as nrepl]
+              [clojure.tools.nrepl.server :as nrepl-server]
               [leiningen.core.project :as project]
+              [leiningen.figwheel :as figwheel]
               [leiningen.repl :as repl]
               [org.httpkit.server :as server]
               [ring.middleware.reload :as reload]
@@ -10,6 +12,8 @@
               [compojure.core :refer [defroutes GET POST DELETE]]
               [compojure.route :as route])
       (:import (com.hypirion.io Pipe ClosingPipe)))
+
+
 
 ;;; Projects
 
@@ -81,6 +85,7 @@
        :out-writer out-writer
        :err-writer err-writer})))
 
+
 (defonce free-port (atom 4000))
 (defn next-free-port []
   (swap! free-port inc))
@@ -124,6 +129,9 @@
           nil)
       (throw (ex-info "repl not running" {:name name})))))
 
+(def self-repl {:host "localhost"
+                :port 7888})
+
 
 (defn repl-eval! [name code]
   (let [{:keys [host port]} (-> name get-project* ::run-state deref :repl)]
@@ -133,6 +141,14 @@
           (nrepl/message {:op "eval" :code code})
           doall))))
 
+
+(defn figwheel-process [project]
+  {:thread (Thread. (fn [] (figwheel/figwheel project)))})
+
+(defn start-figwheel! [name]
+  (let [project (get-project* "lein-ui")]
+    (swap! (-> project ::run-state)
+           assoc :figwheel (figwheel-process project))))
 
 ;;; Util
 (defn base-url []
@@ -159,8 +175,8 @@
      {:url url}
      (if process
        {:state :started
-        :host (::host process)
-        :port (::port process)
+        :host (:host process)
+        :port (:port process)
         :stop-url (str (url-for-project name) "/repl/stop")
         :eval-url (str (url-for-project name) "/repl/eval")}
        {:state :stopped
@@ -204,6 +220,11 @@
   (load-project! project-root))
 
 
+(defn bootstrap-self []
+  (load-project! ".")
+  (swap! (-> "lein-ui" (get-project*) ::run-state)
+         assoc :repl self-repl
+               :figwheel (figwheel-process (get-project* "lein-ui"))))
 
 
 ;;; Server
@@ -228,7 +249,7 @@
        {:body (pprint-str (get-readable-project project-name))
         :status 200})
   (GET "/api/projects/:project-name/raw-map" [project-name]
-       {:body (pprint-str (get-readable-raw-project project-name))        
+       {:body (pprint-str (get-readable-raw-project project-name))
         :status 200})
   (POST "/api/projects/:project-name/repl/start" [project-name]
         (start-repl! project-name)
@@ -263,3 +284,11 @@
 (defn reset-server []
   (stop-server)
   (start-server))
+
+(defonce nrepl-server (atom nil))
+(defonce web-server (atom nil))
+(defn -main []  
+  (reset! nrepl-server (nrepl-server/start-server :port (:port self-repl)))
+  (reset! web-server (start-server))
+  (bootstrap-self)
+  nil)

@@ -20,6 +20,8 @@
                  [org.webjars/react "0.11.1"]
                  [om "0.7.1"]
                  [cljs-http "0.1.14"]
+                 [lein-cljsbuild "1.0.3"]
+                 [lein-figwheel "0.1.4-SNAPSHOT"]
                  [figwheel "0.1.4-SNAPSHOT"]
                  [sablono "0.2.22"]]
 
@@ -33,5 +35,7 @@
 
   :plugins [[lein-cljsbuild "1.0.3"]
             [lein-figwheel "0.1.4-SNAPSHOT"]]
+
+  :main lein-ui.core
 
   :repl-options {:nrepl-middleware [cemerick.piggieback/wrap-cljs-repl]})
