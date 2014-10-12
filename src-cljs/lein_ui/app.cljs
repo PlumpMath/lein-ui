@@ -156,8 +156,9 @@
                                     {:state :no-response}
                                     result)]
             (om/transact! project
-                          (fn [p]
-                            (update-in p [:repl :history :entries index] merge final-state))))))))
+                         (fn [p]
+                            (update-in p [:repl :history :entries index]
+                                       merge final-state))))))))
 
 (defn ensure-project-controller-process [project]
   (if-let [controller (@project :controller)]
@@ -167,10 +168,12 @@
        :process (go
                   (get-edn-url in (@project :url))
                   (let [summary (<! in)]
-                    (om/transact! project (fn [p]
-                                            (-> p
-                                                (merge summary)
-                                                (assoc-in [:repl :history] {:index 0 :entries (sorted-map-by >)})))))
+                    (om/transact! project
+                                  (fn [p]
+                                    (-> p
+                                        (merge summary)
+                                        (assoc-in [:repl :history]
+                                                  {:index 0 :entries (sorted-map-by >)})))))
 
                   (get-edn-url in (@project :raw-map-url))
                   (let [raw-map (<! in)]
@@ -188,7 +191,8 @@
         (swap! app-state (fn [state]
                            (-> state
                                (assoc-in [:projects :active] (@project :name))
-                               (assoc-in [:projects :map (:name @project) :controller] (ensure-project-controller-process project))))))
+                               (assoc-in [:projects :map (:name @project) :controller]
+                                         (ensure-project-controller-process project))))))
       (recur))))
 
 
