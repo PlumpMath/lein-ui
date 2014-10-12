@@ -79,9 +79,14 @@
                                              :args [(.-value eval-input)]})
                                       (set! (.-value eval-input) ""))}
                            "Eval!"]
-                          [:ul
+                          [:ul {:class "eval-results"}
                            (for [[index eval-request] (vec (-> repl :history :entries))]
-                             [:li {:key index}
+                             [:li {:key index
+                                   :class (str "eval-state-" (name (:state eval-request))
+                                               (when (:error eval-request)
+                                                 " eval-state-error")
+                                               
+                                               )}
                               [:div {:class "eval-code"}
                                (:code eval-request)]
                               (when-let [value (:value eval-request)]
@@ -90,8 +95,13 @@
                               (when-let [out (:out eval-request)]
                                 [:div {:class "eval-out"}
                                  out])
-                              ])
-                           ]]))))))
+                              (when-let [error (:error eval-request)]
+                                [:div {:class "eval-error"}
+                                 error])
+                              (when-let [exception (:exception eval-request)]
+                                [:div {:class "eval-exception"}
+                                 exception])
+                              ])]]))))))
 
 (defn app-view [project owner]
   (reify
@@ -108,7 +118,7 @@
                           {:init-state {:project-controller (-> project :controller :in)}}))]
              [:div
               [:h3 "Dependencies"]
-              [:ol
+              [:ol 
                (for [[name version] (get-in project [:raw-map :dependencies])]
                  [:li {:key name} (str name " " version)])]]]))))
 
@@ -228,3 +238,4 @@
    :jsload-callback (fn [] (print "reloaded"))) ;; optional callback
   )
 (connect)
+

@@ -23,3 +23,97 @@
     display: inline-block;
 }
 
+.eval-results {
+    margin-top: 10px;
+    padding-left: 0px;
+    list-style-type: none;
+}
+
+.eval-results li {
+    padding: 5px;
+    margin-top: 10px;
+}
+
+.eval-code {
+    font-family: "monospace";
+    font-size: 10pt;
+}
+.eval-value {
+    font-family: "monospace";
+    font-size: 10pt;
+}
+
+.eval-out {
+    font-family: "monospace";
+    font-size: 10pt;
+}
+
+.eval-error {
+    font-family: "monospace";
+    font-size: 10pt;
+}
+
+.eval-exception {
+    font-family: "monospace";
+    font-size: 10pt;
+}
+
+
+
+
+.eval-code::before {
+    content: "Code: ";
+    font-style: italic;
+    font-family: "Times New Roman";
+    font-size: 12pt;
+}
+
+.eval-value::before {
+    content: "Result: ";
+    font-style: italic;
+    font-family: "Times New Roman";
+    font-size: 12pt;
+
+}
+
+.eval-out::before {
+    content: "Out: ";
+    font-style: italic;
+    font-family: "Times New Roman";
+    font-size: 12pt;
+
+}
+
+.eval-error::before {
+    content: "Error: ";
+    font-style: italic;
+    font-family: "Times New Roman";
+    font-size: 12pt;
+
+}
+
+.eval-exception::before {
+    content: "Exception: ";
+    font-style: italic;
+    font-family: "Times New Roman";
+    font-size: 12pt;
+
+}
+
+
+
+.eval-state-done {
+    border: 2px solid green;
+}
+
+.eval-state-waiting {
+    border: 2px solid yellow;
+}
+
+.eval-state-no-response {
+    border: 2px solid orange;
+}
+
+.eval-state-error {
+    border: 2px solid red;
+}
