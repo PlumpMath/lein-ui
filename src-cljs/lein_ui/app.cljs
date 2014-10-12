@@ -80,8 +80,17 @@
                                       (set! (.-value eval-input) ""))}
                            "Eval!"]
                           [:ul
-                           (for [[index item] (vec (-> repl :history :entries))]
-                             [:li {:key index} (:code item)])
+                           (for [[index eval-request] (vec (-> repl :history :entries))]
+                             [:li {:key index}
+                              [:div {:class "eval-code"}
+                               (:code eval-request)]
+                              (when-let [value (:value eval-request)]
+                                [:div {:class "eval-value"}
+                                 value])
+                              (when-let [out (:out eval-request)]
+                                [:div {:class "eval-out"}
+                                 out])
+                              ])
                            ]]))))))
 
 (defn app-view [project owner]
