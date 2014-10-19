@@ -251,6 +251,9 @@
 ;;; Server
 
 (defroutes all-routes
+  (GET "/websocket" {:as request}
+       (server/with-channel request channel
+         (server/send! channel "yoo")))
   (GET "/api/projects" []
        {:body (pprint-str (get-projects))
         :status 200})
