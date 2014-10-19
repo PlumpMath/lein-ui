@@ -2,7 +2,7 @@
     (:require [clojure.java.io :as io]
               [clojure.pprint :as pprint]
               [clojure.tools.nrepl :as nrepl]
-              [clojure.tools.nrepl.server :as nrepl-server]
+              [lein-ui.nrepl :as ui-repl]
               [leiningen.core.project :as project]
               [leiningen.figwheel :as figwheel]
               [leiningen.repl :as repl]
@@ -10,23 +10,7 @@
               [ring.middleware.reload :as reload]
               [compojure.handler :refer [site]]
               [compojure.core :refer [defroutes GET POST DELETE]]
-              [compojure.route :as route]
-
-
-              ;; TODO move elsewhere
-              [cider.nrepl.middleware.apropos]
-              [cider.nrepl.middleware.classpath]
-              [cider.nrepl.middleware.complete]
-              [cider.nrepl.middleware.info]
-              [cider.nrepl.middleware.inspect]
-              [cider.nrepl.middleware.macroexpand]
-              ;; [cider.nrepl.middleware.ns]
-              [cider.nrepl.middleware.resource]
-              [cider.nrepl.middleware.stacktrace]
-              [cider.nrepl.middleware.test]
-              [cider.nrepl.middleware.trace]
-              ;; [cider.nrepl.middleware.undef]
-              )
+              [compojure.route :as route])
       (:import (com.hypirion.io Pipe ClosingPipe)))
 
 
@@ -312,21 +296,8 @@
 (defonce nrepl-server (atom nil))
 (defonce web-server (atom nil))
 (defn -main []
-  (reset! nrepl-server (nrepl-server/start-server :port (:port self-repl)
-                                                  :handler (nrepl-server/default-handler
-                                                             #'cider.nrepl.middleware.apropos/wrap-apropos
-                                                             #'cider.nrepl.middleware.classpath/wrap-classpath
-                                                             #'cider.nrepl.middleware.complete/wrap-complete
-                                                             #'cider.nrepl.middleware.info/wrap-info
-                                                             #'cider.nrepl.middleware.inspect/wrap-inspect
-                                                             #'cider.nrepl.middleware.macroexpand/wrap-macroexpand
-                                                             ;; #'cider.nrepl.middleware.ns/wrap-ns
-                                                             #'cider.nrepl.middleware.resource/wrap-resource
-                                                             #'cider.nrepl.middleware.stacktrace/wrap-stacktrace
-                                                             #'cider.nrepl.middleware.test/wrap-test
-                                                             #'cider.nrepl.middleware.trace/wrap-trace
-                                                             ;; #'cider.nrepl.middleware.undef/wrap-undef
-                                                             )))
+  (reset! nrepl-server
+          (ui-repl/lein-ui-nrepl :port (:port self-repl)))
   (reset! web-server (start-server))
   (bootstrap-self)
   nil)
