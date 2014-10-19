@@ -30,8 +30,10 @@
 }
 
 .eval-results li {
+    position: relative;
     padding: 5px;
     margin-top: 10px;
+    min-height: 4px;
 }
 
 .eval-code {
@@ -112,8 +114,23 @@
 
 .eval-state-no-response {
     border: 2px solid orange;
-}
+}p
 
 .eval-state-error {
     border: 2px solid red;
+}
+
+.toggle-button {
+    width: 14px;
+    height: 14px;
+    background-color: #ccc;
+    padding: 0px;
+    position: absolute;
+    right: 0px;
+    top: 0px;
+    cursor: pointer;
+}
+
+.eval-results .hidden {
+    display: none;
 }

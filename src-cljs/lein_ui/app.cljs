@@ -84,24 +84,28 @@
                              [:li {:key index
                                    :class (str "eval-state-" (name (:state eval-request))
                                                (when (:error eval-request)
-                                                 " eval-state-error")
-                                               
-                                               )}
-                              [:div {:class "eval-code"}
-                               (:code eval-request)]
-                              (when-let [value (:value eval-request)]
-                                [:div {:class "eval-value"}
-                                 value])
-                              (when-let [out (:out eval-request)]
-                                [:div {:class "eval-out"}
-                                 out])
-                              (when-let [error (:error eval-request)]
-                                [:div {:class "eval-error"}
-                                 error])
-                              (when-let [exception (:exception eval-request)]
-                                [:div {:class "eval-exception"}
-                                 exception])
-                              ])]]))))))
+                                                 " eval-state-error"))}
+                              [:button {:class "toggle-button"
+                                        :onClick (fn []
+                                                   (om/transact! repl
+                                                                 (fn [r]
+                                                                   (update-in r [:history :entries index :hide] not))))}]
+                              [:div {:class (str "eval-contents"
+                                                 (when (:hide eval-request)
+                                                   " hidden"))}
+                               [:div {:class "eval-code"}
+                                (:code eval-request)]                              
+                               (when-let [value (:value eval-request)]
+                                 [:div {:class "eval-value"}
+                                  value])
+                               (when-let [out (:out eval-request)]
+                                 [:div {:class "eval-out"} out])
+                               (when-let [error (:error eval-request)]
+                                 [:div {:class "eval-error"}
+                                  error])
+                               (when-let [exception (:exception eval-request)]
+                                 [:div {:class "eval-exception"}
+                                  exception])]])]]))))))
 
 (defn app-view [project owner]
   (reify
