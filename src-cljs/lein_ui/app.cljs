@@ -94,7 +94,7 @@
                                                  (when (:hide eval-request)
                                                    " hidden"))}
                                [:div {:class "eval-code"}
-                                (:code eval-request)]                              
+                                (:code eval-request)]
                                (when-let [value (:value eval-request)]
                                  [:div {:class "eval-value"}
                                   value])
@@ -122,7 +122,7 @@
                           {:init-state {:project-controller (-> project :controller :in)}}))]
              [:div
               [:h3 "Dependencies"]
-              [:ol 
+              [:ol
                (for [[name version] (get-in project [:raw-map :dependencies])]
                  [:li {:key name} (str name " " version)])]]]))))
 
@@ -149,6 +149,7 @@
  app
  app-state
  {:target (. js/document (getElementById "my-app"))})
+
 
 (defmulti handle-project-message (fn [{:keys [msg]} project] msg))
 
@@ -218,14 +219,42 @@
                                          (ensure-project-controller-process project))))))
       (recur))))
 
+(defmulti handle-ws-message (fn [type args] type))
+
+(defmethod handle-ws-message :default [type args]
+  (println "unhandled ws message" type args))
+
+(defmethod handle-ws-message :set [_ [path value]]
+  (swap! app-state assoc-in path value))
+
 
 (defonce run-processes
   (do
     (set-project-process)
+
+    (let [socket (js/WebSocket. "ws://localhost:8000/websocket")
+          socket-chan (chan)]
+      (go
+        (doto socket
+        (aset "onopen" (fn [e]
+                         (.log js/console "ws open" e)))
+        (aset "onclose" (fn [e]
+                          (.log js/console "ws close" e)))
+        (aset "onmessage" (fn [e]
+                            (.log js/console e)
+                            (put! socket-chan e)))
+        (aset "onerror" (fn [e]
+                          (.log js/console "ws error" e))))
+        (loop []
+          (let [ws-msg (<! socket-chan)
+                msg-data (edn/read-string (.-data ws-msg))]
+            (handle-ws-message (:type msg-data) (:args msg-data)))
+          (recur))))
     nil))
 
 (defonce load-initial-state
   (go
+
     (let [result (<! (http/get "http://localhost:8000/api/projects"))]
       (swap! app-state assoc-in [:projects :map]
              (reduce (fn [m p]
@@ -235,6 +264,7 @@
 
  ;; optional callback
 
+
 (defn connect []
 
   (fw/watch-and-reload
@@ -242,4 +272,3 @@
    :jsload-callback (fn [] (print "reloaded"))) ;; optional callback
   )
 (connect)
-

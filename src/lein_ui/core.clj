@@ -237,7 +237,11 @@
 (defroutes all-routes
   (GET "/websocket" {:as request}
        (server/with-channel request channel
-         (server/send! channel "yoo")))
+         (Thread/sleep 3000)
+         (server/send! channel (pprint-str {:type :set
+                                            :args [[:projects :map "lein-ui"
+                                                    :raw-map
+                                                    :description] "yomama"]}))))
   (GET "/api/projects" []
        {:body (pprint-str (get-projects))
         :status 200})
