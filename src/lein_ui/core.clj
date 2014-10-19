@@ -159,11 +159,12 @@
 
 
 (defn figwheel-process [project]
-  (println "starting figwheel thread")
-  {:thread (.start
-            (Thread. (bound-fn []
-                       (println "starting figwheel")
-                       (figwheel/figwheel project))))})
+  (let [out-writer (java.io.StringWriter.)]
+    {:thread (.start
+              (Thread. (bound-fn []
+                         (binding [*out* out-writer]
+                           (figwheel/figwheel project)))))
+     :out-writer out-writer}))
 
 (defn start-figwheel! [name]
   (let [project (get-project* "lein-ui")]
