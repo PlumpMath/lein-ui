@@ -121,6 +121,12 @@
                 (om/build repl-widget (:repl project)
                           {:init-state {:project-controller (-> project :controller :in)}}))]
              [:div
+              [:h3 "Figwheel"]
+              (when-let [figwheel (project :figwheel)]
+                [:pre figwheel]
+                )
+              ]
+             [:div
               [:h3 "Dependencies"]
               [:ol
                (for [[name version] (get-in project [:raw-map :dependencies])]
@@ -227,29 +233,34 @@
 (defmethod handle-ws-message :set [_ [path value]]
   (swap! app-state assoc-in path value))
 
-
-(defonce run-processes
-  (do
-    (set-project-process)
-
-    (let [socket (js/WebSocket. "ws://localhost:8000/websocket")
-          socket-chan (chan)]
-      (go
-        (doto socket
+(defn websocket-process []
+  (let [socket (js/WebSocket. "ws://localhost:8000/websocket")
+        socket-chan (chan)]
+    (go
+      (doto socket
         (aset "onopen" (fn [e]
                          (.log js/console "ws open" e)))
         (aset "onclose" (fn [e]
                           (.log js/console "ws close" e)))
         (aset "onmessage" (fn [e]
-                            (.log js/console e)
+                            (.log js/console "ws message" e)
                             (put! socket-chan e)))
         (aset "onerror" (fn [e]
                           (.log js/console "ws error" e))))
-        (loop []
-          (let [ws-msg (<! socket-chan)
-                msg-data (edn/read-string (.-data ws-msg))]
-            (handle-ws-message (:type msg-data) (:args msg-data)))
-          (recur))))
+      (loop []
+        (let [ws-msg (<! socket-chan)
+              msg-data (try (edn/read-string (.-data ws-msg))
+                            (catch :default e
+                              (.log js/console "error reading" ws-msg)
+                              nil))]
+          (when msg-data
+            (handle-ws-message (:type msg-data) (:args msg-data))))
+        (recur)))))
+
+(defonce run-processes
+  (do
+    (set-project-process)
+    (websocket-process)
     nil))
 
 (defonce load-initial-state

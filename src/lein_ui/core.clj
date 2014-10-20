@@ -1,5 +1,6 @@
 (ns lein-ui.core
-    (:require [clojure.java.io :as io]
+    (:require [clojure.core.async :refer [go-loop <! timeout]]
+              [clojure.java.io :as io]
               [clojure.pprint :as pprint]
               [clojure.tools.nrepl :as nrepl]
               [lein-ui.nrepl :as ui-repl]
@@ -234,14 +235,26 @@
 
 ;;; Server
 
+(defonce figwheel-receivers (atom {}))
+(defn figwheel-broadcaster []
+  (go-loop []
+    (<! (timeout 500))
+    (doseq [[project subscribers] @figwheel-receivers]
+      (let [output (-> (get-project* project)
+                       ::run-state
+                       deref
+                       :figwheel
+                       :out-writer
+                       str)]
+        (server/send! subscribers (pprint-str {:type :set
+                                               :args [[:projects :map project :figwheel] output]}))))
+    (recur)))
+
 (defroutes all-routes
   (GET "/websocket" {:as request}
        (server/with-channel request channel
-         (Thread/sleep 3000)
-         (server/send! channel (pprint-str {:type :set
-                                            :args [[:projects :map "lein-ui"
-                                                    :raw-map
-                                                    :description] "yomama"]}))))
+         (swap! figwheel-receivers assoc "lein-ui" channel)
+         (server/on-close channel (fn [status] (swap! figwheel-receivers dissoc "lein-ui" channel)))))
   (GET "/api/projects" []
        {:body (pprint-str (get-projects))
         :status 200})
