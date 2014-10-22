@@ -18,10 +18,10 @@
             [cider.nrepl.middleware.undef]))
 
 
-(def items (atom {:requests []
-                  :responses []}) )
+(defonce items (atom {:position 0
+                      :latest []}))
 
-
+(defonce error (atom nil))
 
 (defonce cider-handlers [#'cider.nrepl.middleware.apropos/wrap-apropos
                          #'cider.nrepl.middleware.classpath/wrap-classpath
@@ -37,30 +37,48 @@
                          #'cider.nrepl.middleware.undef/wrap-undef
                          ])
 
+(defn update-log [items msg]
+  (try
+    (swap! items (fn [{:keys [position latest]}]
+                   {:position (inc position)
+                    :latest ((comp vec (partial take 500) (partial conj latest))
+                             msg)}))
+    (catch Exception e
+      (reset! error e))))
 
-(deftype LogTransport [inner]
+(deftype LogTransport [items inner]
   t/Transport
   (send [this msg]
-    (swap! items update-in [:responses] conj msg)
+    (update-log items msg)
     (t/send inner msg))
   (recv [this msg]
     (t/recv inner msg)))
 
-(defn log-middleware [handler]
-  (fn [message]
-    (swap! items update-in [:requests] conj message)
-    (handler (update-in message [:transport] #(LogTransport. %)))))
+(defn log-middleware [items handler]
+  (fn [msg]    
+    (update-log items msg)
+    (handler (update-in msg [:transport] #(LogTransport. items %)))))
 
+(defn partial-middleware [middleware-var & args]
+  (with-meta (apply partial middleware-var args)
+    (meta middleware-var)))
 
 (middle/set-descriptor! #'log-middleware
                         {:requires (constantly true)
                          :expects #{}})
 
 (defn lein-ui-handler [middlewares]
-  (apply server/default-handler (concat [log-middleware] cider-handlers middlewares)))
+  (apply server/default-handler (concat [(partial-middleware log-middleware items)] cider-handlers middlewares)))
 
 (defn lein-ui-nrepl [& {:keys [] :as opts}]
   (apply server/start-server
          (apply concat
                 (seq (merge {:handler (lein-ui-handler [])}
                             opts)))))
+(defn get-messages [items from]
+  (let [{:keys [position latest]} @items
+        n (count latest)
+        drop-n (max (- position n)
+                    from)]
+    {:from (if (<= drop-n 0) (- position n) from)
+     :messages (drop drop-n latest)}))
