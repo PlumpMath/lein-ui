@@ -1,9 +1,9 @@
 (ns lein-ui.core
     (:require [clojure.core.async :refer [go-loop <! timeout]]
               [clojure.java.io :as io]
-              [clojure.pprint :as pprint]
               [clojure.tools.nrepl :as nrepl]
               [lein-ui.nrepl :as ui-repl]
+              [lein-ui.util :refer [pprint-str]]
               [leiningen.core.project :as project]
               [leiningen.figwheel :as figwheel]
               [leiningen.repl :as repl]
@@ -162,11 +162,6 @@
 
 (defn url-for [path]
   (str (base-url) path))
-
-(defn pprint-str [o]
-  (let [w (java.io.StringWriter.)]
-    (pprint/pprint o w)
-    (.toString w)))
 
 
 ;;; API
