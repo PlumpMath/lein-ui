@@ -283,3 +283,141 @@
    :jsload-callback (fn [] (print "reloaded"))) ;; optional callback
   )
 (connect)
+
+
+;; (def local-position 0)
+
+;; (def server (atom {:client-position 0
+;;                    :items []}))
+
+;; (def sync-client [client-position]
+;;   (let [old-position (@server :client-position)
+;;         items (@server :items)
+;;         state' (assoc state :client-position client-position)]))
+
+;;; Goal
+;;
+;; Multiple clients can connect to a server and submit nrepl commands.
+;;
+;; An "nREPL" log contains data for both the requests made to nrepl
+;; by all clients and their responses.
+
+;; The nREPL log can be replicated on each client.
+
+;; Users can see who sent each nrepl command
+
+;; Solutions
+;;
+;; Connect with a Websocket.
+;;
+;; There is a protocol for submitting commands to nREPL and reporting
+;; stream state and/or request a syncrhonization.
+
+;; An nREPL middle captures requests and responses and appends them to
+;; a log.  The order that they are appended is the 'server order'
+;; and this is the log clients sync.
+
+;; Commands to nREPL are submitted directly to nREPL.  Until the nREPL
+;; middleware logs the command, it is not part of the global state.
+
+;; (A second log exists for incoming commands.  There exists enough
+;; information to merge the nREPL log and the command log).
+
+;; Clients can ask for all entries from an offest (inclusive) and send
+;; a subscribe message with a current position.  The server will then
+;; send all message from current position and continue streaming
+;; messages as they arrive.
+
+
+;; Implementation
+
+;; lein-ui.nrepl
+;;  - middleware that logs to an atom passed in during initialization
+;;  - the logging fn makes sure no more than X items are active in the log (drop old)
+;;  - there's a function for getting the log between position A=then and B=now
+;;
+
+;; lein-ui.nrepl.handler
+;;  - Handler for setting up a websocket that listens for messages
+;;  - Responsible for observing the log and streaming it to clients
+;;  - Message format:
+;;    base: {:type (type/Union :nrepl/command :nrepl/observe-log)}
+;;          :nrepl/observe-log {:from Int}
+;;          :nrepl/command {:op :eval
+;;                          :code String}
+
+;;    response
+;;    [ <nrepl-msg> ... ]
+
+
+;; lein-ui.nrepl.client
+;;
+;;  - Connects to the server, receives the stream, and parses the
+;;  nrepl message to derive a data structure usable for display nrepl
+;;  interactions in the UI.  Also provides function for sending an
+;;  nrepl command
+
+;; lein-ui.app.nrepl
+;;  - Manages the nrepl client and presents a UI to the user
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+;; Multi-user builder
+;; Users interact with a definition window
+;; Users send their definitions to be run against a sample input/state or hookup an input from the browser
+
+;; Other users see new definitions and can edit them in place.  Sending the new definition forks the state (inputs against old defintion will effect the state of the old definition)
+
+;; When two users edit the same definition set, it forks.
+
+;; Users can hide defintions in DS from their view.  Defintions can be added and removed from the DS.
