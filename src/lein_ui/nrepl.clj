@@ -21,6 +21,8 @@
 (defonce items (atom {:position 0
                       :latest []}))
 
+(defonce handlers (atom {:by-id {}}))
+
 (defonce error (atom nil))
 
 (defonce cider-handlers [#'cider.nrepl.middleware.apropos/wrap-apropos
@@ -43,6 +45,9 @@
                    {:position (inc position)
                     :latest ((comp vec (partial take 500) (partial conj latest))
                              msg)}))
+    (if-let [handler (-> @handlers :by-id (get (msg :id)))]
+      ;; TODO (safely (handler msg)
+      (handler msg))
     (catch Exception e
       (reset! error e))))
 
@@ -82,3 +87,10 @@
                     from)]
     {:from (if (<= drop-n 0) (- position n) from)
      :messages (drop drop-n latest)}))
+
+
+(defn set-handler-for-id! [id handler]
+  (swap! handlers assoc-in [:by-id id] handler))
+
+(defn remove-handler-for-id! [id]
+  (swap! handlers update-in [:by-id] dissoc id))
