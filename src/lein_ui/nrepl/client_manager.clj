@@ -40,33 +40,36 @@
 
 (defn new-session-response-handler [session project callback]
   (bound-fn [{:keys [id status new-session] :as msg}]
+    ;; our handler is also called for all messages with :id id,
+    ;; i.e. including the message we send.  ignore it by checking for
+    ;; :op, a key present in nrepl requests
     (if-not (contains? msg :op)
-        (try
-          (println "got here.. that's good" msg)
-          (ui-nrepl/remove-handler-for-id! id)
+      (try
+        (println "got here.. that's good" msg)
+        (ui-nrepl/remove-handler-for-id! id)
 
-          (when-not (contains? (set status) :done)
-            (println (format (str "Response to create session"
-                                  " for %s on project %s with id %s"
-                                  " was not marked as done")
-                             (:user session) project id))
-            (callback :failure [:bad-message msg])
-            (throw (ex-info "Bad message in response to new session" msg)))
+        (when-not (contains? (set status) :done)
+          (println (format (str "Response to create session"
+                                " for %s on project %s with id %s"
+                                " was not marked as done")
+                           (:user session) project id))
+          (callback :failure [:bad-message msg])
+          (throw (ex-info "Bad message in response to new session" msg)))
 
-          (println (format "Session created for %s on %s: %s"
-                           (:user session) project new-session))
+        (println (format "Session created for %s on %s: %s"
+                         (:user session) project new-session))
 
-          (when-not (set-user-session! repl-channels project (:user session) new-session)
-            (do
-              (send-message! session project {:op "close" :session new-session})
-              (println
-               (format "Duplicate session created for %s on %s, closing %s"
-                       (:user session) project new-session))))
+        (when-not (set-user-session! repl-channels project (:user session) new-session)
+          (do
+            (send-message! session project {:op "close" :session new-session})
+            (println
+             (format "Duplicate session created for %s on %s, closing %s"
+                     (:user session) project new-session))))
 
-          (callback :success (get-in @repl-channels [:sessions (:user session) project]))
-          (catch Exception e
-            (.printStackTrace e)
-            (callback :exception e))))))
+        (callback :success (get-in @repl-channels [:sessions (:user session) project]))
+        (catch Exception e
+          (.printStackTrace e)
+          (callback :exception e))))))
 
 (defn ensure-user-session [session project]
   (when-not (get-in @repl-channels [(:user session) project])
