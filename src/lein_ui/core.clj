@@ -125,7 +125,7 @@
 
 (defn bootstrap-self []
   (load-project! ".")
-  (swap! (-> (get-project*) ::run-state) :repl self-repl)
+  (swap! (-> (get-project*) ::run-state) assoc :repl self-repl)
   (start-figwheel!))
 
 
@@ -155,7 +155,7 @@
        (let [project (get-project*)
              run-state @(project ::run-state)]
          {:body (pprint-str
-                 (merge (project-summary project)
+                 (merge (project-summary)
                         ;; TODO just include these in the summary?
                         {:map-url (url-for "/map")
                          :raw-map-url (url-for "/raw-map")

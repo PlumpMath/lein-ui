@@ -10,8 +10,7 @@
 
 (enable-console-print!)
 
-(defonce app-state (atom {:projects {:active nil
-                                     :map {}}}))
+(defonce app-state (atom {:project nil}))
 
 (defn edn-body [response]
   (-> response :body str edn/read-string))
@@ -28,29 +27,6 @@
     (let [result (<! (api-call :get url))]
       (put! result-chan result))))
 
-(defn active-project [projects]
-  (when-let [active-key (projects :active)]
-    (get-in projects [:map active-key])))
-
-(defn app-list [projects owner]
-  (reify
-    om/IRenderState
-    (render-state [this {:keys [set-project]}]
-      (html
-       [:div {:class "project-list"}
-        [:h3 "Projects"]
-        (for [[name project] (projects :map)]
-          [:a {:key name
-               :href "#"
-               :class (if (= (projects :active)
-                             name)
-                        "active-project-link"
-                        "")
-               :onClick (fn [_]
-                          (put! set-project project))}
-           (project :name)])]))))
-
-
 (defn repl-widget [repl owner]
   (reify
     om/IDidMount
@@ -64,11 +40,7 @@
       (let [{:keys [state url]} repl]
         (condp = state
           :stopped (html [:div
-                          [:button {:onClick
-                                    (fn [_]
-                                      (put! project-controller {:msg :start-repl
-                                                                :args nil}))}
-                           "start repl"]])
+                          "repl not started.. this is unexpected"])
           :started (html [:div
                           [:input {:type "text"
                                    :class "repl-code"}]
@@ -109,8 +81,11 @@
 
 (defn app-view [project owner]
   (reify
+
+
     om/IRender
     (render [_]
+      ;; TODO rename css active-project-view
       (html [:div {:class "active-project-view"}
              [:div
               [:h1 (:name project)]
@@ -147,8 +122,7 @@
                                   (println (pr-str @app-state)))}
           "Print State"]]
 
-        (om/build app-list (:projects data) {:init-state {:set-project set-project}})
-        (when-let [project (active-project (:projects data))]
+        (when-let [project (:project data)]
           (om/build app-view project))]))))
 
 (om/root
@@ -157,24 +131,18 @@
  {:target (. js/document (getElementById "my-app"))})
 
 
-(defmulti handle-project-message (fn [{:keys [msg]} project] msg))
+(defmulti handle-project-message (fn [{:keys [msg]}] msg))
 
-(defmethod handle-project-message :start-repl [_ project]
-  (go (let [repl (<! (api-call :post (-> @project :repl :url)))]
-        (om/transact! project (fn [p]
-                                (update-in p [:repl] merge repl))))))
-
-(defmethod handle-project-message :eval [{:keys [args]} project]
+(defmethod handle-project-message :eval [{:keys [args]}]
   (let [code (first args)]
-    (om/transact! project
-                  (fn [p]
-                    (update-in p [:repl :history]
-                               (fn [{:keys [index entries] :as history}]
-                                 {:entries (assoc entries index {:state :waiting
-                                                                 :code code})
-                                  :index (inc index)}))))
-    (let [index (-> @project :repl :history :index dec)]
-      (go (let [result (<! (api-call :post (-> @project :repl :eval-url)
+    (swap! app-state
+           update-in [:project :repl :history]
+           (fn [{:keys [index entries] :as history}]
+             {:entries (assoc entries index {:state :waiting
+                                             :code code})
+              :index (inc index)}))
+    (let [index (-> @app-state :project :repl :history :index dec)]
+      (go (let [result (<! (api-call :post (-> @app-state :project :repl :eval-url)
                                      [:code code]))
                 final-state (reduce (fn [s val]
                                       (cond
@@ -185,45 +153,29 @@
                                        (:out val)   (update-in s [:out] str (:out val))))
                                     {:state :no-response}
                                     result)]
-            (om/transact! project
-                         (fn [p]
-                            (update-in p [:repl :history :entries index]
-                                       merge final-state))))))))
+            (swap! app-state update-in [:project :repl :history :entries index]
+                   merge final-state))))))
 
-(defn ensure-project-controller-process [project]
-  (if-let [controller (@project :controller)]
+(defn ensure-project-controller-process []
+  (if-let [controller (-> @app-state :project :controller)]
     controller
     (let [in (chan)]
+
       {:in in
        :process (go
-                  (get-edn-url in (@project :url))
-                  (let [summary (<! in)]
-                    (om/transact! project
-                                  (fn [p]
-                                    (-> p
-                                        (merge summary)
-                                        (assoc-in [:repl :history]
-                                                  {:index 0 :entries (sorted-map-by >)})))))
-
-                  (get-edn-url in (@project :raw-map-url))
+                  (swap! app-state assoc-in [:project :repl :history] {:index 0
+                                                                       :entries (sorted-map-by >)})
+                  (println "getting project map from " (-> @app-state :project :raw-map-url))
+                  (get-edn-url in (-> @app-state :project :raw-map-url))
+                  (println "waiting for response")
                   (let [raw-map (<! in)]
-                    (om/transact! project #(assoc % :raw-map raw-map)))
+                    (println "got response")
+                    (swap! app-state assoc-in [:project :raw-map] raw-map))
 
                   (loop []
                     (let [msg (<! in)]
-                      (handle-project-message msg project))
+                      (handle-project-message msg))
                     (recur)))})))
-
-(defn set-project-process []
-  (go
-    (loop []
-      (let [project (<! set-project)]
-        (swap! app-state (fn [state]
-                           (-> state
-                               (assoc-in [:projects :active] (@project :name))
-                               (assoc-in [:projects :map (:name @project) :controller]
-                                         (ensure-project-controller-process project))))))
-      (recur))))
 
 (defmulti handle-ws-message (fn [type args] type))
 
@@ -259,19 +211,19 @@
 
 (defonce run-processes
   (do
-    (set-project-process)
     (websocket-process)
     nil))
 
 (defonce load-initial-state
   (go
 
-    (let [result (<! (http/get "http://localhost:8000/api/projects"))]
-      (swap! app-state assoc-in [:projects :map]
-             (reduce (fn [m p]
-                       (assoc m (p :name) p))
-                     {}
-                     (-> result :body str edn/read-string :projects))))))
+    (let [result (<! (http/get "http://localhost:8000/api/project"))]
+      (swap! app-state assoc :project
+             (edn-body result))
+      (println @app-state)
+      (swap! app-state assoc-in [:project :controller]
+             (ensure-project-controller-process))
+      )))
 
  ;; optional callback
 
