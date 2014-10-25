@@ -42,9 +42,11 @@
 (defn update-log [items msg]
   (try
     (swap! items (fn [{:keys [position latest]}]
-                   {:position (inc position)
-                    :latest ((comp vec (partial take 500) (partial conj latest))
-                             msg)}))
+                   (let [latest (conj latest msg)
+                         item-count (count latest)
+                         latest (if (>= position 500) (rest latest) latest)]
+                     {:position (inc position)
+                      :latest (vec latest)})))
     (if-let [handler (-> @handlers :by-id (get (msg :id)))]
       ;; TODO (safely (handler msg)
       (handler msg))
@@ -60,7 +62,7 @@
     (t/recv inner msg)))
 
 (defn log-middleware [items handler]
-  (fn [msg]    
+  (fn [msg]
     (update-log items msg)
     (handler (update-in msg [:transport] #(LogTransport. items %)))))
 
@@ -90,6 +92,7 @@
 
 
 (defn set-handler-for-id! [id handler]
+  (println handlers id handler)
   (swap! handlers assoc-in [:by-id id] handler))
 
 (defn remove-handler-for-id! [id]

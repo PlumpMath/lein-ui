@@ -1,8 +1,9 @@
-(ns lein-ui.nrepl.handler
+(ns lein-ui.nrepl.http
   (:require [org.httpkit.server :as server]
             [clojure.tools.nrepl :as nrepl]
             [lein-ui.core :as ui]
             [lein-ui.nrepl :as ui-nrepl]
+            [lein-ui.nrepl.client-manager :as client-manager]
             [lein-ui.util :refer [pprint-str]]))
 
 
@@ -34,74 +35,19 @@
 ;; {log & notify} [callback]
 
 
-(defonce repl-channels (atom {:connections {}
-                              :sessions {}}))
 
-(defn set-nil-path!
-  "Attempts to set value at path in the deref'd state.  set-nil-path!
-  ensures that (get-in @state path) is nil before and during setting.
-  It will return true if `value` is set in state or false if it is not"
-  [state path value]
-  (let [now @state]
-    (if (get-in @state path)
-      false
-      (let [new (assoc-in now path value)
-            set? (compare-and-set! state now new)]
-        (if set?
-          true
-          (recur state path value))))))
+(defmulti handle-message (fn [event & args] event))
 
-(defn ensure-project-connection [project]
-  (if-let [conn (-> @repl-channels :connections (get project))]
-    conn
-    (let [conn (apply nrepl/connect (apply concat (ui/get-repl-data project)))]
-      (if (set-nil-path! repl-channels [:connections project] conn)
-        conn
-        (do
-          (.close conn)
-          (recur project))))))
+(defmethod handle-message [:ws :receive] [_ session msg]
+  ;; (validate-nrepl-msg! msg :or send-error :to session)
+  ;; (some-> (validate-nrepl-msg! msg) (send-error session))
+  (let [session (client-manager/load-repl-session session (:subject msg))]
+    (client-manager/send-message! session (:subject msg) (:body msg))
+    ;; (send-nrepl-message session! session msg)
+    ))
 
-(defn set-user-session! [state project user session-id]
-  (set-nil-path! state [:sessions project user] session-id))
-
-
-(defn new-session-response-callback [project user callback]
-  (fn [{:keys [id status new-session] :as msg}]
-    (ui-nrepl/remove-handler-for-id! id)
-
-    (when-not (contains? (set status) "done")
-      (println (format (str "Response to create session"
-                            "for %s on project % with id %s"
-                            "did not contain a session id")
-                       user project new-session))
-      (throw (ex-info "Bad message in response to new session" msg)))
-
-    (println (format "Session created for %s on %s: %s"
-                     user project new-session))
-
-    (when-not (set-user-session! repl-channels project user new-session)
-      (do
-        (nrepl/message (get-in @repl-channels [:connections project])
-                       {:op "close" :session new-session})
-        (println
-         (format "Duplicate session created for %s on %s, closing %s"
-                 user project new-session))))
-
-    (callback :success (get-in @repl-channels [:sessions user project]))))
-
-
-
-(defn find-repl-session [user project]
-  (ensure-project-connection project)
-  (ensure-user-session project user)
-  (get-in @repl-channels [user project])))
-
-(defmulti handle-message (fn [msg user] (msg :type)))
-
-(defmethod handle-message :nrepl/command [msg user app-state]
-  (let [session-id (find-repl-session user (msg :subject))]
-    (nrepl/message (assoc (msg :nrepl/message)
-                     :session session-id))))
+(defmethod handle-message [:ws :close] [_ session status]
+  (println "Session" session "disconnected with" status))
 
 (defn nrepl-socket-handler [request]
   (let [user :current-user]
