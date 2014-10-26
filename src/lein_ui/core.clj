@@ -2,6 +2,7 @@
     (:require [clojure.core.async :refer [go-loop <! timeout]]
               [clojure.java.io :as io]
               [clojure.tools.nrepl :as nrepl]
+              [lein-ui.http :as http]
               [lein-ui.nrepl :as ui-repl]
               [lein-ui.util :refer [pprint-str]]
               [leiningen.core.project :as project]
@@ -10,7 +11,7 @@
               [org.httpkit.server :as server]
               [ring.middleware.reload :as reload]
               [compojure.handler :refer [site]]
-              [compojure.core :refer [defroutes GET POST DELETE]]
+              [compojure.core :as compojure :refer [defroutes GET POST DELETE]]
               [compojure.route :as route])
       (:import (com.hypirion.io Pipe ClosingPipe)))
 
@@ -169,16 +170,28 @@
         :status 200})
   (POST "/api/project/repl/eval" {{:keys [code]} :params}
         {:body (pprint-str (repl-eval! code))
-         :status 200})
-  (route/resources "/")
-  (route/not-found "<p>Page not found.</p>"))
+         :status 200}))
 
 (defonce server (atom nil))
+
+(defn wrap-continue-session [h]
+  (fn [req]
+    (let [resp (h req)]
+      (if (resp :session)
+        resp
+        (assoc resp :session (req :session))))))
 
 (defn start-server [& args] ;; entry point, lein run will pick up and start from here
   (when @server
     (throw (ex-info "Server running!" {})))
-  (let [handler (reload/wrap-reload (site #'all-routes))]
+  (let [handler (-> (compojure/routes #'all-routes
+                                       #'http/user-routes
+                                       (route/resources "/")
+                                       (route/not-found "<p>Page not found.</p>"))
+                    wrap-continue-session
+                    http/wrap-user
+                    site
+                    reload/wrap-reload)]
     (reset! server (server/run-server handler {:port 8000}))))
 
 (defn stop-server []

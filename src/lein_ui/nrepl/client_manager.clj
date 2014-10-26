@@ -1,7 +1,6 @@
 (ns lein-ui.nrepl.client-manager
   (:require [clojure.tools.nrepl :as nrepl]
             [clojure.tools.nrepl.misc :refer [uuid]]
-            [lein-ui.core :as ui]
             [lein-ui.nrepl :as ui-nrepl]))
 
 

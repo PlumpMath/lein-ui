@@ -1,7 +1,6 @@
 (ns lein-ui.nrepl.http
   (:require [org.httpkit.server :as server]
             [clojure.tools.nrepl :as nrepl]
-            [lein-ui.core :as ui]
             [lein-ui.nrepl :as ui-nrepl]
             [lein-ui.nrepl.client-manager :as client-manager]
             [lein-ui.util :refer [pprint-str]]))
