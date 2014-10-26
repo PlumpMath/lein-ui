@@ -18,6 +18,8 @@
             [cider.nrepl.middleware.undef]))
 
 
+(defonce connection (atom nil))
+
 (defonce items (atom {:position 0
                       :latest []}))
 
@@ -92,8 +94,15 @@
 
 
 (defn set-handler-for-id! [id handler]
-  (println handlers id handler)
   (swap! handlers assoc-in [:by-id id] handler))
 
 (defn remove-handler-for-id! [id]
   (swap! handlers update-in [:by-id] dissoc id))
+
+
+(defn message [msg]
+   (nrepl/message (nrepl/client @connection 100) msg))
+
+(defn send-message! [msg]
+  (message msg)
+  nil)

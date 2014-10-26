@@ -194,6 +194,7 @@
 (defn -main []
   (reset! nrepl-server
           (ui-repl/lein-ui-nrepl :port (:port self-repl)))
+  (reset! ui-repl/connection (apply nrepl/connect (apply concat (seq self-repl))))
   (reset! web-server (start-server))
   (bootstrap-self)
   nil)
