@@ -16,7 +16,12 @@
           (if (or (empty? username))
             {:status 400 :body (pprint-str {:error "empty username"})}
             {:status 201 :cookies {"username" username}
-             :body (pprint-str {:username username})}))))
+             :body (pprint-str {:username username})})))
+  (DELETE "/api/user" {:as request}
+          (if (:user request)
+            {:status 200 :cookies {:username {:value ""
+                                              :expires "2000-01-01T00:00:00.000Z"}}}
+            {:status 404 :body (pprint-str {:error "no user set"})})))
 
 (defn wrap-user [h]
   (fn [request]

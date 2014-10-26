@@ -10,7 +10,8 @@
 
 (enable-console-print!)
 
-(defonce app-state (atom {:project nil}))
+(defonce app-state (atom {:project nil
+                          :user {:status :loading}}))
 
 (defn edn-body [response]
   (-> response :body str edn/read-string))
@@ -26,6 +27,48 @@
   (go
     (let [result (<! (api-call :get url))]
       (put! result-chan result))))
+
+(defn logged-in? [user]
+  (= :logged-in (-> user :status)))
+
+(defn loading? [user]
+  (= :loading (-> user :status)))
+
+(defn login! [button username]
+  (set! (.-disabled button) true)
+  (swap! app-state assoc-in [:user :status] :loading)
+  (go
+    (let [result (<! (api-call :post "http://localhost:8000/api/user" [:username username]))]
+      (if (contains? result :error)
+        (println "Couldn't log in: " result)
+        (swap! app-state assoc :user {:status :logged-out})
+        (do
+          (swap! app-state assoc :user (assoc result
+                                         :status :logged-in)))))))
+
+(defn logout! []
+  (swap! app-state assoc :user {:status :logged-out})
+  (go (api-call :delete "http://localhost:8000/api/user")))
+
+(defn user-widget [user owner]
+  (reify
+    om/IRenderState
+    (render-state [_ state]
+      (html
+       [:div
+        (cond
+         (logged-in? user) [:div [:h3 "Welcome, " [:span (:username user)]]
+                            [:button {:onClick (fn [_] (logout!))} "Logout"]
+                            ]
+         (loading? user) [:span "Loading user.."]
+         :else           [:span "Username" [:input {:type "text"
+                                                    :onChange (fn [e]
+                                                                (om/set-state! owner
+                                                                            :username-input
+                                                                            (.-value (.-target e))))}]
+                          [:button {:onClick (fn [e]
+
+                                               (login! (.-target e) (state :username-input)))} "Login"]])]))))
 
 (defn repl-widget [repl owner]
   (reify
@@ -121,9 +164,10 @@
          [:button {:onMouseDown (fn [_]
                                   (println (pr-str @app-state)))}
           "Print State"]]
-
+        (om/build user-widget (:user data))
         (when-let [project (:project data)]
-          (om/build app-view project))]))))
+          (if (logged-in? (:user data))
+            (om/build app-view project)))]))))
 
 (om/root
  app
@@ -222,30 +266,18 @@
              (edn-body result))
       (println @app-state)
       (swap! app-state assoc-in [:project :controller]
-             (ensure-project-controller-process))
-      )))
-
- ;; optional callback
-
+             (ensure-project-controller-process)))
+    (let [result (edn-body (<! (http/get "http://localhost:8000/api/user")))]
+      (if (contains? result :error)
+        (swap! app-state assoc :user {:status :logged-out})
+        (swap! app-state assoc :user (assoc result
+                                       :status :logged-in))))))
 
 (defn connect []
-
   (fw/watch-and-reload
    :websocket-url "ws://localhost:3449/figwheel-ws"
-   :jsload-callback (fn [] (print "reloaded"))) ;; optional callback
-  )
+   :jsload-callback (fn [] (print "reloaded"))))
 (connect)
-
-
-;; (def local-position 0)
-
-;; (def server (atom {:client-position 0
-;;                    :items []}))
-
-;; (def sync-client [client-position]
-;;   (let [old-position (@server :client-position)
-;;         items (@server :items)
-;;         state' (assoc state :client-position client-position)]))
 
 ;;; Goal
 ;;
@@ -279,97 +311,3 @@
 ;; a subscribe message with a current position.  The server will then
 ;; send all message from current position and continue streaming
 ;; messages as they arrive.
-
-
-;; Implementation
-
-;; lein-ui.nrepl
-;;  - middleware that logs to an atom passed in during initialization
-;;  - the logging fn makes sure no more than X items are active in the log (drop old)
-;;  - there's a function for getting the log between position A=then and B=now
-;;
-
-;; lein-ui.nrepl.handler
-;;  - Handler for setting up a websocket that listens for messages
-;;  - Responsible for observing the log and streaming it to clients
-;;  - Message format:
-;;    base: {:type (type/Union :nrepl/command :nrepl/observe-log)}
-;;          :nrepl/observe-log {:from Int}
-;;          :nrepl/command {:op :eval
-;;                          :code String}
-
-;;    response
-;;    [ <nrepl-msg> ... ]
-
-
-;; lein-ui.nrepl.client
-;;
-;;  - Connects to the server, receives the stream, and parses the
-;;  nrepl message to derive a data structure usable for display nrepl
-;;  interactions in the UI.  Also provides function for sending an
-;;  nrepl command
-
-;; lein-ui.app.nrepl
-;;  - Manages the nrepl client and presents a UI to the user
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-;; Multi-user builder
-;; Users interact with a definition window
-;; Users send their definitions to be run against a sample input/state or hookup an input from the browser
-
-;; Other users see new definitions and can edit them in place.  Sending the new definition forks the state (inputs against old defintion will effect the state of the old definition)
-
-;; When two users edit the same definition set, it forks.
-
-;; Users can hide defintions in DS from their view.  Defintions can be added and removed from the DS.
