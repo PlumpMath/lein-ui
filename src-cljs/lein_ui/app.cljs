@@ -61,14 +61,17 @@
                             [:button {:onClick (fn [_] (logout!))} "Logout"]
                             ]
          (loading? user) [:span "Loading user.."]
-         :else           [:span "Username" [:input {:type "text"
-                                                    :onChange (fn [e]
-                                                                (om/set-state! owner
-                                                                            :username-input
-                                                                            (.-value (.-target e))))}]
-                          [:button {:onClick (fn [e]
-
-                                               (login! (.-target e) (state :username-input)))} "Login"]])]))))
+         :else           [:span "Username"
+                          [:input
+                           {:type "text"
+                            :onChange (fn [e]
+                                        (om/set-state! owner
+                                                       :username-input
+                                                       (.-value (.-target e))))}]
+                          [:button
+                           {:onClick (fn [e]
+                                       (login! (.-target e) (state :username-input)))}
+                           "Login"]])]))))
 
 (defn repl-widget [repl owner]
   (reify
@@ -95,37 +98,38 @@
                                       (set! (.-value eval-input) ""))}
                            "Eval!"]
                           [:ul {:class "eval-results"}
-                           (for [[index eval-request] (vec (-> repl :history :entries))]
-                             [:li {:key index
-                                   :class (str "eval-state-" (name (:state eval-request))
-                                               (when (:error eval-request)
-                                                 " eval-state-error"))}
-                              [:button {:class "toggle-button"
-                                        :onClick (fn []
-                                                   (om/transact! repl
-                                                                 (fn [r]
-                                                                   (update-in r [:history :entries index :hide] not))))}]
-                              [:div {:class (str "eval-contents"
-                                                 (when (:hide eval-request)
-                                                   " hidden"))}
-                               [:div {:class "eval-code"}
-                                (:code eval-request)]
-                               (when-let [value (:value eval-request)]
-                                 [:div {:class "eval-value"}
-                                  value])
-                               (when-let [out (:out eval-request)]
-                                 [:div {:class "eval-out"} out])
-                               (when-let [error (:error eval-request)]
-                                 [:div {:class "eval-error"}
-                                  error])
-                               (when-let [exception (:exception eval-request)]
-                                 [:div {:class "eval-exception"}
-                                  exception])]])]]))))))
+                           (for [id (rseq (-> (om/value repl) :history :order))]
+                             (let [entry (->  repl :history :entries (get id))]
+                               [:li {:key id
+                                     :class (str "eval-state-" (name (:state entry))
+                                                 (when (:error entry)
+                                                   " eval-state-error"))}
+                                [:button {:class "toggle-button"
+                                          :onClick (fn []
+                                                     (om/transact! repl
+                                                                   (fn [r]
+                                                                     (update-in r [:history :entries id :hide] not))))}]
+                                [:div {:class (str "eval-contents"
+                                                   (when (:hide entry)
+                                                     " hidden"))}
+                                 (when-let [user (:user entry)]
+                                   [:div user])
+                                 [:div {:class "eval-code"}
+                                  (:code entry)]
+                                 (when-let [value (:value entry)]
+                                   [:div {:class "eval-value"}
+                                    value])
+                                 (when-let [out (:out entry)]
+                                   [:div {:class "eval-out"} out])
+                                 (when-let [error (:error entry)]
+                                   [:div {:class "eval-error"}
+                                    error])
+                                 (when-let [exception (:exception entry)]
+                                   [:div {:class "eval-exception"}
+                                    exception])]]))]]))))))
 
 (defn app-view [project owner]
   (reify
-
-
     om/IRender
     (render [_]
       ;; TODO rename css active-project-view
@@ -179,26 +183,8 @@
 
 (defmethod handle-project-message :eval [{:keys [args]}]
   (let [code (first args)]
-    (swap! app-state
-           update-in [:project :repl :history]
-           (fn [{:keys [index entries] :as history}]
-             {:entries (assoc entries index {:state :waiting
-                                             :code code})
-              :index (inc index)}))
-    (let [index (-> @app-state :project :repl :history :index dec)]
-      (go (let [result (<! (api-call :post (-> @app-state :project :repl :eval-url)
-                                     [:code code]))
-                final-state (reduce (fn [s val]
-                                      (cond
-                                       (= (:status val) ["done"]) (assoc s :state :done)
-                                       (:ex val) (assoc s :exception (:ex val))
-                                       (:err val) (assoc s :error (:err val))
-                                       (:value val) (assoc s :value (:value val))
-                                       (:out val)   (update-in s [:out] str (:out val))))
-                                    {:state :no-response}
-                                    result)]
-            (swap! app-state update-in [:project :repl :history :entries index]
-                   merge final-state))))))
+    (go (api-call :post (-> @app-state :project :repl :eval-url)
+                  [:code code]))))
 
 (defn ensure-project-controller-process []
   (if-let [controller (-> @app-state :project :controller)]
@@ -207,7 +193,7 @@
 
       {:in in
        :process (go
-                  (swap! app-state assoc-in [:project :repl :history] {:index 0
+                  (swap! app-state assoc-in [:project :repl :history] {:order []
                                                                        :entries (sorted-map-by >)})
                   (get-edn-url in (-> @app-state :project :raw-map-url))
                   (let [raw-map (<! in)]
@@ -226,6 +212,30 @@
 (defmethod handle-ws-message :set [_ [path value]]
   (swap! app-state assoc-in path value))
 
+(defmethod handle-ws-message :nrepl/message [_ {:keys [body]}]
+  (let [id (body :id)
+        state (get-in @app-state [:project :repl :history :entries id])
+        state' (-> (merge {:messages []}
+                          state
+                          (cond
+                           (contains? body :op) {:state :waiting :op (body :op)
+                                                 :code (body :code)
+                                                 :user (body :user)}
+                           (contains? (-> body :status set) :done) {:state :done}
+                           (contains? body :ex) {:exception (:ex body)}
+                           (contains? body :value) {:value (:value body)}
+                           (contains? body :err) {:error (:err body)}
+                           (contains? body :out) {:out (str (state :out) (body :out))}))
+                   (update-in [:messages] conj body))]
+
+    (swap! app-state assoc-in [:project :repl :history :entries id] state')
+    (when (and (not state)
+               ;; only show :op "eval" requests until we figure out
+               ;; how to show more
+               (state' :code))
+      (swap! app-state update-in [:project :repl :history :order] conj id))))
+
+(defonce web-message (atom nil))
 (defn websocket-process []
   (let [socket (js/WebSocket. "ws://localhost:8000/websocket")
         socket-chan (chan)]
@@ -237,17 +247,18 @@
                           (.log js/console "ws close" e)))
         (aset "onmessage" (fn [e]
                             (.log js/console "ws message" e)
-                            #_(put! socket-chan e)))
+                            (put! socket-chan e)))
         (aset "onerror" (fn [e]
                           (.log js/console "ws error" e))))
       (loop []
         (let [ws-msg (<! socket-chan)
+              _ (reset! web-message ws-msg)
               msg-data (try (edn/read-string (.-data ws-msg))
                             (catch :default e
                               (.log js/console "error reading" ws-msg)
                               nil))]
           (when msg-data
-            (handle-ws-message (:type msg-data) (:args msg-data))))
+            (handle-ws-message (:type msg-data) msg-data)))
         (recur)))))
 
 (defonce run-processes

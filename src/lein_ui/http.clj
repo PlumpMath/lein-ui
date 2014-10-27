@@ -2,6 +2,7 @@
   (:require [compojure.core :refer [defroutes GET POST DELETE]]
             [clojure.java.io :as io]
             [lein-ui.http.route :refer [url-for]]
+            [lein-ui.nrepl.client-manager :as client-manager]
             [lein-ui.nrepl.http :as nrepl-http]
             [lein-ui.project :as project]
             [lein-ui.util :refer [pprint-str]]
@@ -62,9 +63,9 @@
   (GET (url-for [:project :repl]) []
        {:status 200
         :body (pprint-str (project/get-repl-data))})
-  (POST (url-for [:project :repl :eval]) {{:keys [code]} :params :as request}
-        ;; (client-manager/send-message! {:op "eval" :code code})
-        {:body (pprint-str (project/repl-eval! code))
+  (POST (url-for [:project :repl :eval]) {:as request}
+        (client-manager/send-message! request {:op "eval" :code (-> request :params :code)})
+        {:body ""
          :status 200}))
 
 

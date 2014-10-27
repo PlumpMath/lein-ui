@@ -13,12 +13,19 @@
 (defmulti handle-message (fn [event & args] event))
 
 (defmethod handle-message [:ws :connect] [_ session channel]
-  (let [id (session :ws-session-id)]
+  (let [id (session :ws-session-id)
+        out *out*]
     (println (:user session) "connected on websocket id" id)
     (ui-nrepl/subscribe! id
                          (fn [msg]
-                           (server/send! channel (pprint-str {:type :nrepl/message
-                                                              :body (dissoc msg :transport)}))))))
+                           ;; the :err nrepl message is sent in a
+                           ;; context where print-readably is bound
+                           ;; false - which really screws things up
+                           (binding [*print-readably* true]
+
+                             (let [data (pr-str {:type :nrepl/message
+                                                 :body (dissoc msg :transport)})]
+                               (server/send! channel data)))))))
 
 (defmethod handle-message [:ws :receive] [_ session msg]
   (client-manager/send-message! session (:body msg)))
