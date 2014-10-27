@@ -23,7 +23,8 @@
 (defonce items (atom {:position 0
                       :latest []}))
 
-(defonce handlers (atom {:by-id {}}))
+(defonce handlers (atom {:by-id {}
+                         :all-messages {}}))
 
 (defonce error (atom nil))
 
@@ -50,7 +51,9 @@
                      {:position (inc position)
                       :latest (vec latest)})))
     (if-let [handler (-> @handlers :by-id (get (msg :id)))]
-      ;; TODO (safely (handler msg)
+      ;; TODO (safely (handler msg))
+      (handler msg))
+    (doseq [handler (-> @handlers :all-messages vals)]
       (handler msg))
     (catch Exception e
       (reset! error e))))
@@ -98,6 +101,12 @@
 
 (defn remove-handler-for-id! [id]
   (swap! handlers update-in [:by-id] dissoc id))
+
+(defn subscribe! [id handler]
+  (swap! handlers assoc-in [:all-messages id] handler))
+
+(defn unsubscribe! [id]
+  (swap! handlers update-in [:all-messages] dissoc id))
 
 
 (defn message [msg]

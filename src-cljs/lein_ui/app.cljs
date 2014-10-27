@@ -40,8 +40,8 @@
   (go
     (let [result (<! (api-call :post "http://localhost:8000/api/user" [:username username]))]
       (if (contains? result :error)
-        (println "Couldn't log in: " result)
-        (swap! app-state assoc :user {:status :logged-out})
+        (do (println "Couldn't log in: " result)
+            (swap! app-state assoc :user {:status :logged-out}))
         (do
           (swap! app-state assoc :user (assoc result
                                          :status :logged-in)))))))
@@ -209,11 +209,8 @@
        :process (go
                   (swap! app-state assoc-in [:project :repl :history] {:index 0
                                                                        :entries (sorted-map-by >)})
-                  (println "getting project map from " (-> @app-state :project :raw-map-url))
                   (get-edn-url in (-> @app-state :project :raw-map-url))
-                  (println "waiting for response")
                   (let [raw-map (<! in)]
-                    (println "got response")
                     (swap! app-state assoc-in [:project :raw-map] raw-map))
 
                   (loop []
@@ -240,7 +237,7 @@
                           (.log js/console "ws close" e)))
         (aset "onmessage" (fn [e]
                             (.log js/console "ws message" e)
-                            (put! socket-chan e)))
+                            #_(put! socket-chan e)))
         (aset "onerror" (fn [e]
                           (.log js/console "ws error" e))))
       (loop []
@@ -264,7 +261,6 @@
     (let [result (<! (http/get "http://localhost:8000/api/project"))]
       (swap! app-state assoc :project
              (edn-body result))
-      (println @app-state)
       (swap! app-state assoc-in [:project :controller]
              (ensure-project-controller-process)))
     (let [result (edn-body (<! (http/get "http://localhost:8000/api/user")))]

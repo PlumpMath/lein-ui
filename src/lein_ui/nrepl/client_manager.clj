@@ -86,5 +86,7 @@
 (defn send-message! [session msg]
   (if-let [session-id (when (:user session)
                      (-> (ensure-user-session session) :id))]
-    (ui-nrepl/send-message! (assoc msg :session session-id))
+    (ui-nrepl/send-message! (assoc msg
+                              :session session-id
+                              :user (:user session)))
     (throw (ex-info "No nrepl session" {:session session}))))

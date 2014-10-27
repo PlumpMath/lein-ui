@@ -15,7 +15,9 @@
         (let [username (str username)]
           (if (or (empty? username))
             {:status 400 :body (pprint-str {:error "empty username"})}
-            {:status 201 :cookies {"username" username}
+            {:status 201 :cookies {"username" {:value username
+                                               :path "/"
+                                               :expires "2050-01-01T00:00:00.000Z"}}
              :body (pprint-str {:username username})})))
   (DELETE "/api/user" {:as request}
           (if (:user request)

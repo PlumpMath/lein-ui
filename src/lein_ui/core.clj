@@ -4,6 +4,7 @@
               [clojure.tools.nrepl :as nrepl]
               [lein-ui.http :as http]
               [lein-ui.nrepl :as ui-repl]
+              [lein-ui.nrepl.http :as nrepl-http]
               [lein-ui.util :refer [pprint-str]]
               [leiningen.core.project :as project]
               [leiningen.figwheel :as figwheel]
@@ -132,26 +133,9 @@
 
 ;;; Server
 
-(defonce figwheel-receivers (atom {}))
-(defn figwheel-broadcaster []
-  (go-loop []
-    (<! (timeout 500))
-    (doseq [[project subscribers] @figwheel-receivers]
-      (let [output (-> (get-project*)
-                       ::run-state
-                       deref
-                       :figwheel
-                       :out-writer
-                       str)]
-        (server/send! subscribers (pprint-str {:type :set
-                                               :args [[:projects :map project :figwheel] output]}))))
-    (recur)))
-
 (defroutes all-routes
   (GET "/websocket" {:as request}
-       (server/with-channel request channel
-         (swap! figwheel-receivers assoc "lein-ui" channel)
-         (server/on-close channel (fn [status] (swap! figwheel-receivers dissoc "lein-ui" channel)))))
+       (nrepl-http/nrepl-socket-handler request))
   (GET "/api/project" []
        (let [project (get-project*)
              run-state @(project ::run-state)]
@@ -168,7 +152,8 @@
   (GET "/api/project/raw-map" []
        {:body (pprint-str (get-readable-raw-project))
         :status 200})
-  (POST "/api/project/repl/eval" {{:keys [code]} :params}
+  (POST "/api/project/repl/eval" {{:keys [code]} :params :as request}
+        ;; (client-manager/send-message! {:op "eval" :code code})
         {:body (pprint-str (repl-eval! code))
          :status 200}))
 
