@@ -23,6 +23,41 @@
                            :url url}
                           (when body {:form-params body})))))))
 
+(defonce websocket (atom nil))
+
+(defn open-websocket! []
+  (let [socket (js/WebSocket. "ws://localhost:8000/websocket")
+        socket-chan (chan)]
+    (go
+      (doto socket
+        (aset "onopen" (fn [e]
+                         (.log js/console "ws open" e)))
+        (aset "onclose" (fn [e]
+                          (.log js/console "ws close" e)))
+        (aset "onmessage" (fn [e]
+                            (.log js/console "ws message" e)
+                            (put! socket-chan e)))
+        (aset "onerror" (fn [e]
+                          (.log js/console "ws error" e))))
+      (loop []
+        (let [ws-msg (<! socket-chan)
+              msg-data (try (edn/read-string (.-data ws-msg))
+                            (catch :default e
+                              (.log js/console "error reading" ws-msg)
+                              nil))]
+          (when msg-data
+            (handle-ws-message (:type msg-data) msg-data)))
+        (recur)))
+
+    (reset! websocket socket)))
+
+
+(defn close-websocket! []
+  (let [socket @websocket]
+    (.close socket)
+    (reset! websocket nil)))
+
+
 (defn get-edn-url [result-chan url]
   (go
     (let [result (<! (api-call :get url))]
@@ -44,9 +79,11 @@
             (swap! app-state assoc :user {:status :logged-out}))
         (do
           (swap! app-state assoc :user (assoc result
-                                         :status :logged-in)))))))
+                                         :status :logged-in))))))
+  (open-websocket!))
 
 (defn logout! []
+  (close-websocket!)
   (swap! app-state assoc :user {:status :logged-out})
   (go (api-call :delete "http://localhost:8000/api/user")))
 
@@ -235,36 +272,6 @@
                (state' :code))
       (swap! app-state update-in [:project :repl :history :order] conj id))))
 
-(defonce web-message (atom nil))
-(defn websocket-process []
-  (let [socket (js/WebSocket. "ws://localhost:8000/websocket")
-        socket-chan (chan)]
-    (go
-      (doto socket
-        (aset "onopen" (fn [e]
-                         (.log js/console "ws open" e)))
-        (aset "onclose" (fn [e]
-                          (.log js/console "ws close" e)))
-        (aset "onmessage" (fn [e]
-                            (.log js/console "ws message" e)
-                            (put! socket-chan e)))
-        (aset "onerror" (fn [e]
-                          (.log js/console "ws error" e))))
-      (loop []
-        (let [ws-msg (<! socket-chan)
-              _ (reset! web-message ws-msg)
-              msg-data (try (edn/read-string (.-data ws-msg))
-                            (catch :default e
-                              (.log js/console "error reading" ws-msg)
-                              nil))]
-          (when msg-data
-            (handle-ws-message (:type msg-data) msg-data)))
-        (recur)))))
-
-(defonce run-processes
-  (do
-    (websocket-process)
-    nil))
 
 (defonce load-initial-state
   (go
@@ -277,8 +284,9 @@
     (let [result (edn-body (<! (http/get "http://localhost:8000/api/user")))]
       (if (contains? result :error)
         (swap! app-state assoc :user {:status :logged-out})
-        (swap! app-state assoc :user (assoc result
-                                       :status :logged-in))))))
+        (do (swap! app-state assoc :user (assoc result
+                                           :status :logged-in))
+            (open-websocket!))))))
 
 (defn connect []
   (fw/watch-and-reload
