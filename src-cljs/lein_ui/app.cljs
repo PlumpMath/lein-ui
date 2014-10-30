@@ -3,6 +3,7 @@
   (:require [om.core :as om :include-macros true]
             [om.dom :as dom :include-macros true]
             [figwheel.client :as fw :include-macros true]
+            [goog.net.cookies :as cks]
             [cljs-http.client :as http]
             [cljs.core.async :refer [<! put! chan timeout >!]]
             [cljs.reader :as edn]
@@ -87,7 +88,8 @@
 (defn logout! []
   (close-websocket!)
   (swap! app-state assoc :user {:status :logged-out})
-  (go (api-call :delete "http://localhost:8000/api/user")))
+  (go (<! (api-call :delete "http://localhost:8000/api/user"))
+      (cks/remove "username")))
 
 (defn when-enter-key [f & args]
   (fn [e]
