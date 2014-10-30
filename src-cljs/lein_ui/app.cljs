@@ -13,6 +13,8 @@
 (defonce app-state (atom {:project nil
                           :user {:status :loading}}))
 
+(def ENTER-KEY 13)
+
 (defn edn-body [response]
   (-> response :body str edn/read-string))
 
@@ -87,37 +89,43 @@
   (swap! app-state assoc :user {:status :logged-out})
   (go (api-call :delete "http://localhost:8000/api/user")))
 
+(defn when-enter-key [f & args]
+  (fn [e]
+    (when (= ENTER-KEY
+             (.-keyCode e))
+      (apply f e args))))
+
 (defn user-widget [user owner]
   (reify
     om/IRenderState
-    (render-state [_ state]
+    (render-state [_ {:keys [username-input]}]
       (html
        [:div
         (cond
          (logged-in? user) [:div [:h3 "Welcome, " [:span (:username user)]]
-                            [:button {:onClick (fn [_] (logout!))} "Logout"]
-                            ]
+                            [:button {:onClick (fn [_] (logout!))} "Logout"]]
          (loading? user) [:span "Loading user.."]
          :else           [:span "Username"
                           [:input
                            {:type "text"
+                            :value username-input
+                            :onKeyPress (when-enter-key
+                                         (fn [e]
+                                           (login! (.-target e) username-input)
+                                           (om/set-state! owner :username-input "")))
                             :onChange (fn [e]
                                         (om/set-state! owner
                                                        :username-input
                                                        (.-value (.-target e))))}]
                           [:button
                            {:onClick (fn [e]
-                                       (login! (.-target e) (state :username-input)))}
+                                       (when-not (empty? username-input)
+                                         (login! (.-target e) username-input)
+                                         (om/set-state! owner :username-input "")))}
                            "Login"]])]))))
 
 (defn repl-widget [repl owner]
   (reify
-    om/IDidMount
-    (did-mount [this]
-      (om/set-state! owner :eval-input
-                     (-> (om/get-node owner)
-                         (.querySelector ".repl-code"))))
-
     om/IRenderState
     (render-state [_ {:keys [project-controller eval-input]}]
       (let [{:keys [state url]} repl]
@@ -126,13 +134,22 @@
                           "repl not started.. this is unexpected"])
           :started (html [:div
                           [:input {:type "text"
+                                   :value eval-input
+                                   :onKeyPress (when-enter-key (fn [_]
+                                                                 (put! project-controller
+                                                                       {:msg :eval
+                                                                        :args [eval-input]})
+                                                                 (om/set-state! :eval-input "")))
+                                   :onChange (fn [e]
+                                               (om/set-state! owner
+                                                              :eval-input (.-value (.-target e))))
                                    :class "repl-code"}]
                           [:button {:onClick
                                     (fn [_]
                                       (put! project-controller
                                             {:msg :eval
-                                             :args [(.-value eval-input)]})
-                                      (set! (.-value eval-input) ""))}
+                                             :args [eval-input]})
+                                      (om/set-state! :eval-input ""))}
                            "Eval!"]
                           [:ul {:class "eval-results"}
                            (for [id (rseq (-> (om/value repl) :history :order))]
