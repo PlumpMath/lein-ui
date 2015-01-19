@@ -18,7 +18,6 @@
 
 (defn bootstrap-self []
   (project/load-project! ".")
-  (println (project/get-project*))
   (swap! (-> (project/get-project*) project/run-state) assoc :repl self-repl)
   (project/start-figwheel!))
 
@@ -26,6 +25,7 @@
   (reset! nrepl-server
           (ui-repl/lein-ui-nrepl :port (:port self-repl)))
   (reset! ui-repl/connection (apply nrepl/connect (apply concat (seq self-repl))))
+  (println "started on repl at " (self-repl :host) ":" (self-repl :port))
   (reset! web-server (http/start-server server))
   (bootstrap-self)
   nil)

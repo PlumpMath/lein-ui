@@ -113,8 +113,9 @@
                             :value username-input
                             :onKeyPress (when-enter-key
                                          (fn [e]
-                                           (login! (.-target e) username-input)
-                                           (om/set-state! owner :username-input "")))
+                                           (when-not (empty? username-input)
+                                             (login! (.-target e) username-input)
+                                             (om/set-state! owner :username-input ""))))
                             :onChange (fn [e]
                                         (om/set-state! owner
                                                        :username-input
